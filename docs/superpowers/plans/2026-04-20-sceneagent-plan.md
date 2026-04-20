@@ -119,7 +119,10 @@ SCENE_ID=demo
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-SCENE_SUBDIR="${1:-scenes/0001}"
+# InteriorGS scene folders are named NNNN_XXXXXX at the repo root.
+# Browse https://huggingface.co/datasets/spatialverse/InteriorGS/tree/main to pick one.
+# Defaults to the first listed scene.
+SCENE_SUBDIR="${1:-0001_839920}"
 DEST="data/scene/demo"
 mkdir -p "${DEST}"
 hf download spatialverse/InteriorGS \
@@ -138,10 +141,10 @@ Run:
 
 ```bash
 chmod +x scripts/download_scene.sh
-./scripts/download_scene.sh scenes/0001 &
+./scripts/download_scene.sh 0001_839920 &
 ```
 
-(If `scenes/0001` doesn't exist in their repo tree, browse [InteriorGS on HF](https://huggingface.co/datasets/spatialverse/InteriorGS/tree/main), pick any valid scene subpath.)
+(If the default scene fails, browse [InteriorGS on HF](https://huggingface.co/datasets/spatialverse/InteriorGS/tree/main) and pick another folder like `0002_839955`, `0003_839989`, etc.)
 
 ### Pre-5: docker-compose.yml + initial schema
 
