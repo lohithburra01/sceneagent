@@ -1,0 +1,20 @@
+<!doctype html><html><body style="margin:0;background:#000">
+<div id="viewer" style="position:fixed;inset:0"></div>
+<script type="module">
+import { Viewer } from 'https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.7/dist/index.js';
+const params = new URLSearchParams(location.search);
+const splatUrl = params.get('splat');
+const camX = parseFloat(params.get('x') || 0);
+const camY = parseFloat(params.get('y') || 0);
+const camZ = parseFloat(params.get('z') || 1.7);
+const tgtX = parseFloat(params.get('tx') || 0);
+const tgtY = parseFloat(params.get('ty') || 0);
+const tgtZ = parseFloat(params.get('tz') || 1.0);
+const viewer = new Viewer({
+  rootElement: document.getElementById('viewer'),
+  cameraUp: [0, 0, 1],
+  initialCameraPosition: [camX, camY, camZ],
+  initialCameraLookAt: [tgtX, tgtY, tgtZ],
+});
+viewer.addSplatScene(splatUrl).then(() => { viewer.start(); window._ready = true; });
+</script></body></html>

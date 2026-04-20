@@ -1,0 +1,18 @@
+[project]
+name = "sceneagent-pipeline"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pillow>=10.0",
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "open-clip-torch>=2.24",
+  "mobile-sam @ git+https://github.com/ChaoningZhang/MobileSAM.git",
+  "scikit-learn>=1.4",
+  "opencv-python>=4.9",
+  "tqdm>=4.66",
+  "plyfile>=1.0",
+  "asyncpg>=0.29",
+  "pgvector>=0.2",
+]
