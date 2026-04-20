@@ -85,6 +85,20 @@ def project_points(points, w2c, width, height, fov_v_deg):
     return np.stack([u, v, -z], axis=1)
 
 
+# Classes we never want to turn into instances. They're structural (always
+# present) or noise from CLIP's residential bias on our sparse renders.
+STRUCTURAL_CLASSES = {"wall", "floor", "ceiling", "suspended_ceiling"}
+NOISE_CLASSES = {"shower", "bathtub", "toilet", "washing_machine", "dryer",
+                 "stove", "refrigerator", "oven", "microwave", "sink", "bed",
+                 "pillow", "ottoman", "television", "bookshelf", "nightstand",
+                 "fireplace", "mirror", "rug", "curtain", "shelf", "cabinet"}
+
+# Per-mask vote weight uses mask_area normalised against the median, so a big
+# ceiling mask doesn't drown out small wine-bottle masks. Weight = min(1, median_area / mask_area)
+# clipped so tiny masks don't get unbounded influence.
+MIN_CLIP_CONFIDENCE = 0.24   # filter CLIP predictions below this (very weak signal)
+
+
 def vote_class_per_gaussian(centers: np.ndarray):
     intrinsics = json.loads((VIEWS_DIR / "_intrinsics.json").read_text())
     W, H = intrinsics["width"], intrinsics["height"]
@@ -94,6 +108,22 @@ def vote_class_per_gaussian(centers: np.ndarray):
     K = len(HOME_CLASSES)
     N = centers.shape[0]
     class_scores = np.zeros((N, K), dtype=np.float32)
+
+    # First pass: collect all mask areas to compute a median for normalisation.
+    all_areas = []
+    for i, pose in enumerate(intrinsics["poses"]):
+        mp = MASKS_DIR / f"view_{i:03d}.json"
+        if not mp.exists():
+            continue
+        for m in json.loads(mp.read_text()):
+            shape = m["mask_rle"]["shape"]
+            area = sum(run[1] for run in m["mask_rle"]["runs"])
+            if area > 0:
+                all_areas.append(area)
+    if not all_areas:
+        return np.zeros(N, dtype=np.int32), np.zeros(N), np.zeros(N)
+    median_area = float(np.median(all_areas))
+    print(f"median mask area: {median_area:.0f} px (over {len(all_areas)} masks)")
 
     for i, pose in enumerate(intrinsics["poses"]):
         mask_path = MASKS_DIR / f"view_{i:03d}.json"
@@ -110,17 +140,30 @@ def vote_class_per_gaussian(centers: np.ndarray):
         valid = in_front & in_img
 
         for m in masks:
+            cls = m["class_name"]
+            if cls in STRUCTURAL_CLASSES or cls in NOISE_CLASSES:
+                continue
             try:
-                cls_idx = HOME_CLASSES.index(m["class_name"])
+                cls_idx = HOME_CLASSES.index(cls)
             except ValueError:
                 continue
             conf = float(m["class_confidence"])
+            if conf < MIN_CLIP_CONFIDENCE:
+                continue
+            # Mask-area-normalised vote weight: small masks are worth as much
+            # as median; big masks are attenuated (dividing their per-pixel
+            # vote so total mask contribution stays ~= median_area * conf).
+            area = sum(run[1] for run in m["mask_rle"]["runs"])
+            if area <= 0:
+                continue
+            weight = conf * median_area / area
+
             mask_2d = rle_to_mask(m["mask_rle"])
             ui = proj[valid, 0].astype(int)
             vi = proj[valid, 1].astype(int)
             hits = mask_2d[vi, ui]
             valid_idx = np.where(valid)[0][hits]
-            class_scores[valid_idx, cls_idx] += conf
+            class_scores[valid_idx, cls_idx] += weight
 
     best_class = class_scores.argmax(axis=1)
     totals = class_scores.sum(axis=1)
@@ -130,14 +173,20 @@ def vote_class_per_gaussian(centers: np.ndarray):
 
 
 def cluster_instances(centers, class_idx, has_votes):
+    """DBSCAN per class, tighter params matched to the typical GT object size
+    (~0.3m). Skip structural + noise classes."""
+    from pipeline.src.segment import HOME_CLASSES
     instance_ids = np.full(len(centers), -1, dtype=np.int32)
     next_iid = 0
     for cls in np.unique(class_idx):
+        cls_name = HOME_CLASSES[int(cls)]
+        if cls_name in STRUCTURAL_CLASSES or cls_name in NOISE_CLASSES:
+            continue
         mask = (class_idx == cls) & has_votes
         if mask.sum() < 20:
             continue
         pts = centers[mask]
-        labels = DBSCAN(eps=0.3, min_samples=20).fit_predict(pts)
+        labels = DBSCAN(eps=0.15, min_samples=25).fit_predict(pts)
         global_labels = labels.copy()
         for u in np.unique(labels[labels >= 0]):
             global_labels[labels == u] = next_iid

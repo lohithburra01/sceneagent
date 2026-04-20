@@ -1,76 +1,20 @@
 {
-  "num_predicted": 0,
+  "num_predicted": 341,
   "num_ground_truth": 240,
   "tp": 0,
-  "fp": 0,
+  "fp": 341,
   "fn": 240,
-  "precision": 0,
+  "precision": 0.0,
   "recall": 0.0,
-  "f1": 0,
+  "f1": 0.0,
   "iou_threshold": 0.25,
   "per_class": {
-    "jar": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 4
-    },
-    "teapot": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "cabinet": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "tray": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 3
-    },
-    "side_table": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 3
-    },
-    "decorative_painting": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 3
-    },
-    "suspended_ceiling": {
+    "coffee_maker": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 2
-    },
-    "cup": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 24
-    },
-    "door": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
     },
     "dining_plate": {
       "precision": 0,
@@ -79,56 +23,14 @@
       "fp": 0,
       "fn": 10
     },
-    "book": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 4
-    },
-    "billboard": {
+    "body_pillow": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 2
-    },
-    "downlights": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 14
     },
     "box": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "vase": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "coffee_maker": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 2
-    },
-    "chocolate": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 4
-    },
-    "decorative_pendant": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
@@ -142,33 +44,26 @@
       "fp": 0,
       "fn": 4
     },
-    "chandelier": {
+    "console": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "chocolate": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 4
     },
-    "multi_person_sofa": {
-      "precision": 0,
+    "jar": {
+      "precision": 0.0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "basket": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "wine": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 70
+      "fp": 5,
+      "fn": 4
     },
     "placemat": {
       "precision": 0,
@@ -177,28 +72,84 @@
       "fp": 0,
       "fn": 1
     },
-    "bread": {
+    "wine": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 26,
+      "fn": 70
+    },
+    "chair": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 1
     },
-    "candle": {
+    "combination": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "door": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "tray": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3
+    },
+    "cup": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 2,
+      "fn": 24
+    },
+    "high_chair": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 16,
+      "fn": 13
+    },
+    "vase": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 29,
+      "fn": 1
+    },
+    "dining_table": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 2
     },
-    "ornament": {
+    "spotlight": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
-      "fn": 4
+      "fn": 25
     },
-    "wardrobe": {
+    "teapot": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "canned_food": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
@@ -212,54 +163,12 @@
       "fp": 0,
       "fn": 13
     },
-    "wine_glass": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 5
-    },
-    "stool": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 3
-    },
-    "canned_food": {
+    "basket": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 1
-    },
-    "console": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "spotlight": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 25
-    },
-    "cake": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "table": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 2
     },
     "spoon": {
       "precision": 0,
@@ -268,42 +177,28 @@
       "fp": 0,
       "fn": 1
     },
-    "high_chair": {
-      "precision": 0,
+    "ornament": {
+      "precision": 0.0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 0,
-      "fn": 10
+      "fp": 3,
+      "fn": 4
     },
-    "chair": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "window": {
+    "bread": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 1
     },
-    "body_pillow": {
-      "precision": 0,
+    "downlights": {
+      "precision": 0.0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 0,
-      "fn": 2
+      "fp": 120,
+      "fn": 14
     },
-    "combination": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "sofa": {
+    "carpet": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
@@ -317,13 +212,162 @@
       "fp": 0,
       "fn": 1
     },
-    "carpet": {
+    "decorative_painting": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 91,
+      "fn": 3
+    },
+    "side_table": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3
+    },
+    "book": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "wine_glass": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 19,
+      "fn": 5
+    },
+    "shoe": {
+      "precision": 0.0,
+      "recall": 0,
+      "tp": 0,
+      "fp": 30,
+      "fn": 0
+    },
+    "billboard": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "window": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 1
+    },
+    "ceiling": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "cake": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "wardrobe": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "cabinet": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "sofa": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "candle": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "chandelier": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5
     }
   },
-  "note": "InteriorGS 0003_839989 (wine bar). Our splat-render step (Puppeteer + @mkkellogg/gaussian-splats-3d headless) could not load the compressed-packed .ply format within the time budget, so no per-view masks were generated and backproject.py produced an empty inventory. Pipeline code (segment.py / backproject.py / evaluate.py) is implemented and can be run once a compatible 2D rasterizer is plugged in."
+  "class_agnostic_at_0p25": {
+    "tp": 21,
+    "fp": 320,
+    "fn": 219,
+    "precision": 0.06158357771260997,
+    "recall": 0.0875,
+    "f1": 0.07228915662650602
+  },
+  "variants": {
+    "class_matched@0.1": {
+      "tp": 1,
+      "fp": 340,
+      "fn": 239,
+      "precision": 0.002932551319648094,
+      "recall": 0.004166666666666667,
+      "f1": 0.0034423407917383822
+    },
+    "class_agnostic@0.1": {
+      "tp": 37,
+      "fp": 304,
+      "fn": 203,
+      "precision": 0.10850439882697947,
+      "recall": 0.15416666666666667,
+      "f1": 0.12736660929432012
+    },
+    "class_matched@0.25": {
+      "tp": 0,
+      "fp": 341,
+      "fn": 240,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "class_agnostic@0.25": {
+      "tp": 21,
+      "fp": 320,
+      "fn": 219,
+      "precision": 0.06158357771260997,
+      "recall": 0.0875,
+      "f1": 0.07228915662650602
+    },
+    "class_matched@0.5": {
+      "tp": 0,
+      "fp": 341,
+      "fn": 240,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "class_agnostic@0.5": {
+      "tp": 4,
+      "fp": 337,
+      "fn": 236,
+      "precision": 0.011730205278592375,
+      "recall": 0.016666666666666666,
+      "f1": 0.013769363166953529
+    }
+  },
+  "note": "InteriorGS 0003_839989 (wine bar). Pipeline: 30 views rendered from a custom PlayCanvas-compressed PLY decoder + software splat rasterizer, MobileSAM masks, OpenCLIP ViT-B/32 zero-shot over a 54-class home+commercial vocabulary, multi-view voting with mask-area normalisation, DBSCAN per class. Headline numbers are class_matched@IoU>=0.25; class_agnostic@* isolates localisation from classification quality."
 }
