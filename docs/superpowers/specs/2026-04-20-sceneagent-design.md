@@ -4,7 +4,7 @@
 **Working title:** SceneAgent (rebrand before publishing — candidates: ListingTwin, TwinListing, OpenHouse AI)
 **Author:** Lohith Burra
 **Purpose:** Portfolio project targeting 3D Computer Vision + Agentic AI + Digital Twin roles (2026 JD landscape).
-**Build window:** 1–2 days (with Gaussian Grouping pre-computed on Colab the prior night).
+**Build window:** 1–2 days. **No Colab, no splat training, no segmentation run.** The scene is sourced from **InteriorGS** — a 2025 dataset of 1,000 pre-trained Gaussian splats with per-object semantic labels, instance IDs, 3D oriented bounding boxes, floorplans, and occupancy maps. We download one scene and start building.
 
 ---
 
@@ -69,8 +69,8 @@
 
 | Component | v1 behavior | README explanation |
 |---|---|---|
-| Video → splat training pipeline | **Pre-computed once on Colab.** Upload endpoint exists but uses a cached scene for the demo. | "Splat training takes ~45 min on a T4 GPU. Production would queue this via Celery + GPU worker; for the demo, one pre-processed scene is shipped with the repo." |
-| Gaussian Grouping (video → segmented splat) | **Pre-computed once on Colab.** Output cached as files in `data/scene/`. | Same as above. Colab notebook included in repo for reproducibility. |
+| Video → splat training pipeline | **Skipped entirely.** Scene is downloaded from [InteriorGS](https://huggingface.co/datasets/spatialverse/InteriorGS). Upload endpoint exists in code path but the demo uses the downloaded scene. | "Splat training takes ~45 min on a T4 GPU. Production would queue this via Celery + GPU worker; the demo uses an InteriorGS scene (pre-trained, pre-labeled) for reproducibility." |
+| 3D semantic segmentation | **Skipped entirely.** InteriorGS ships labels.json with per-object class names + instance IDs + 3D bounding boxes already computed. | "Production would run Gaussian Grouping ([lkeab/gaussian-grouping](https://github.com/lkeab/gaussian-grouping)) or SAGS on user-uploaded scenes; for the demo, InteriorGS labels are used." |
 | Notes storage for demo | **JSON file** (`demo_notes.json`) with hardcoded timestamped notes. Also addable live via scrubber UI. | "Demo ships with pre-written notes for reproducibility; the scrubber UI lets you add more live." |
 | Splat training service | Celery worker skeleton present but not wired to GPU. Redis container runs. | "Celery infrastructure is in place; production would attach GPU nodes to the worker pool." |
 
@@ -156,11 +156,11 @@
 - **openclip-torch** (CLIP embeddings, runs on CPU)
 - **numpy**, **scipy** (post-processing)
 
-### 3D pipeline (offline, pre-compute)
-- **COLMAP** OR **Polycam export** (we try COLMAP; fall back to Polycam if flaky)
-- **Gaussian Grouping** ([lkeab/gaussian-grouping](https://github.com/lkeab/gaussian-grouping)) — trained once on Colab T4
-- **Segment Anything (SAM)** — used internally by Gaussian Grouping
-- **OpenCLIP** for class name assignment post-hoc
+### 3D scene source (no training required)
+- **InteriorGS dataset** ([HuggingFace](https://huggingface.co/datasets/spatialverse/InteriorGS)) — one scene downloaded, ships pre-trained compressed Gaussian splat + per-object labels.json + floorplan + occupancy map
+- **SuperSplat-compressed .ply** format (the splat)
+- **OpenCLIP** ViT-B/32 — run **only** on InteriorGS label-derived canonical views to compute per-object embeddings for the note matcher (one-time, ~2 min on CPU)
+- **Gaussian Grouping** referenced in README for production upload flow, not run in v1
 
 ### Data
 - **PostgreSQL 16** + **pgvector** extension (CLIP embeddings indexed for cosine similarity)
@@ -229,32 +229,38 @@ CREATE TABLE hotspots (
 
 ---
 
-## 7. Pre-Compute Pipeline (runs on Colab, once per scene)
+## 7. Scene Setup (runs once, no GPU required)
 
-Executed in a Jupyter notebook `notebooks/preprocess_scene.ipynb` shipped with the repo.
+Executed by a Python script `scripts/prepare_scene.py` in the repo.
 
 ```
-Input:  video.mp4 OR frame folder + camera trajectory
-Output: data/scene/
-          ├── gaussians.ply       (splat, modified by Gaussian Grouping)
-          ├── instance_ids.npy    (int per Gaussian)
-          ├── object_inventory.json (our post-processed objects)
-          ├── camera_trajectory.json
-          └── views/              (pre-rendered canonical view per object)
+Input:  one InteriorGS scene directory (downloaded via Hugging Face)
+          ├── 3dgs_compressed.ply
+          ├── labels.json           # per-object class + instance_id + 3D OBB
+          ├── structure.json        # rooms, walls, doors, windows
+          ├── occupancy.png         # grayscale navigability map
+          └── occupancy.json        # occupancy metadata
+
+Output: data/scene/demo/
+          ├── 3dgs_compressed.ply     (unchanged, served to web viewer)
+          ├── object_inventory.json   (our normalized form)
+          ├── camera_trajectory.json  (synthesized — see below)
+          ├── video.mp4               (synthesized walkthrough, see below)
+          └── views/                  (canonical per-object renders for CLIP)
 ```
 
 ### Steps
-1. **COLMAP** (or Polycam export) → camera poses per frame, sparse point cloud.
-2. **Gaussian Grouping training** (Colab, T4 GPU, ~45–90 min) → outputs splat with per-Gaussian identity encoding.
-3. **Post-process** (our code, ~50 lines):
-   - Cluster Gaussians by instance ID → 3D bbox + centroid per instance.
-   - Render best view per instance from the splat (simple: pick pose where object projects largest + sharpest).
-   - Run OpenCLIP zero-shot classification against a fixed candidate set: `[wall, floor, ceiling, window, door, bed, sofa, chair, table, desk, lamp, tv, bookshelf, cabinet, sink, toilet, bathtub, stove, refrigerator, radiator, mirror, plant, painting, rug]`.
-   - Cluster object centroids spatially → room labels (simple: DBSCAN on 2D floor projection, label each cluster by heuristic — "room with bed = bedroom", etc.).
-   - Write all outputs.
+1. **Download the scene** — `scripts/download_scene.sh` uses `huggingface-cli` to pull one InteriorGS scene (user accepts license on HF first, one-time). License acceptance documented in README.
+2. **Parse `labels.json`** → for each object: extract `class_name`, `instance_id`, 8-corner OBB → compute `centroid`, `bbox_min`, `bbox_max` (axis-aligned).
+3. **Assign room labels** by projecting each object centroid onto `structure.json` room polygons (2D point-in-polygon test). Output: every object has a `room_label` ("living_room", "master_bedroom", etc.).
+4. **Render one canonical view per object** using a headless Three.js renderer (Node.js + Puppeteer) — position camera 2m in front of object bbox, facing centroid. Save `views/<instance_id>.jpg`.
+5. **Compute CLIP embeddings** for each canonical view (OpenCLIP ViT-B/32, CPU, ~2 min total for a 100-object scene). Store as `object_inventory.json`.
+6. **Synthesize walkthrough video** for the scrubber UI: generate a scripted camera trajectory (waypoints through rooms using `occupancy.png` for navigability), render frames via headless Three.js, encode to mp4 with ffmpeg. Save `video.mp4` + `camera_trajectory.json` (timestamp → pose lookup).
+
+**Total time to run on a modest laptop: ~15–20 minutes.** One-off.
 
 ### Loaded into Postgres at startup
-On `api` container startup (v1): read `object_inventory.json` → insert into `scene_objects` (if not already present).
+On `api` container startup: read `object_inventory.json` + `camera_trajectory.json` → insert into `scenes`, `scene_objects` (if not already present). Also seed `notes` from `data/scene/demo/demo_notes.json` (hardcoded demo notes with timestamps).
 
 ---
 
@@ -448,9 +454,9 @@ Separate YAMLs for: `namespace`, `postgres-statefulset`, `postgres-pvc`, `postgr
 
 | Risk | Mitigation |
 |---|---|
-| Gaussian Grouping training fails on Colab free tier | Use a Polycam export (.ply) as fallback splat; run SAGS (training-free SAM lifting) on top for segmentation. |
-| COLMAP doesn't converge on shaky video | Capture with Polycam app — it runs its own SLAM and exports both splat and poses. |
-| @mkkellogg/gaussian-splats-3d chokes on our splat format | Convert to SuperSplat or use antimatter15/splat as fallback web viewer. |
+| InteriorGS license acceptance flow blocks immediate access | License is free, one-click acceptance on Hugging Face. README includes screenshots of the acceptance flow. Fallback: SceneSplat-7K ([GaussianWorld/scene_splat_7k](https://huggingface.co/datasets/GaussianWorld/scene_splat_7k)) is a similar ScanNet-derived dataset with labels. |
+| SuperSplat-compressed .ply format not loadable by @mkkellogg/gaussian-splats-3d | @mkkellogg supports SuperSplat format natively. Fallback: decompress with the SuperSplat CLI to standard 3DGS .ply. |
+| Synthesized walkthrough video feels fake in the demo | The synthesized video uses the occupancy map for realistic paths; in the demo video we show the scrubber working on it. README notes: "Production accepts user-uploaded video; for the demo the walkthrough is synthesized from the InteriorGS occupancy map so the scrubber UI has something to scrub against." |
 | Gemini Flash free tier quota exceeded mid-demo | Code path has a Groq fallback for text-only; demo is short enough to stay under quota. |
 | pgvector not available in our chosen Postgres image | Use `pgvector/pgvector:pg16` image (official, Docker Hub). |
 | Minikube demo fails live | Record the minikube segment in advance; use pre-recorded clip in demo video. |
@@ -487,14 +493,16 @@ sceneagent/
 │   ├── web-*.yaml
 │   └── ingress.yaml
 ├── data/
-│   └── scene/demo/           # shipped pre-computed scene
-│       ├── gaussians.ply
+│   └── scene/demo/           # prepared InteriorGS scene (gitignored, fetched via script)
+│       ├── 3dgs_compressed.ply
 │       ├── object_inventory.json
 │       ├── camera_trajectory.json
 │       ├── views/            # canonical per-object renders
-│       └── video.mp4         # original walkthrough for scrubber UI
-├── notebooks/
-│   └── preprocess_scene.ipynb   # Colab notebook: video → Gaussian Grouping → outputs
+│       ├── video.mp4         # synthesized walkthrough for scrubber UI
+│       └── demo_notes.json   # seed notes with timestamps
+├── scripts/
+│   ├── download_scene.sh     # fetch one InteriorGS scene from HF
+│   └── prepare_scene.py      # parse labels → object_inventory, render views, compute CLIP, synthesize walkthrough
 ├── api/                        # Python FastAPI service
 │   ├── pyproject.toml
 │   ├── Dockerfile
@@ -541,7 +549,10 @@ sceneagent/
 
 ## Appendix A: Reference Repositories
 
-- [Gaussian Grouping](https://github.com/lkeab/gaussian-grouping) — ECCV 2024, primary 3D segmentation pipeline.
+- [InteriorGS dataset](https://huggingface.co/datasets/spatialverse/InteriorGS) — **primary scene source.** 1,000 pre-trained Gaussian splats with per-object class labels, instance IDs, 3D OBBs, floorplans, occupancy maps.
+- [InteriorGS GitHub](https://github.com/manycore-research/InteriorGS) — dataset toolkit.
+- [SceneSplat-7K](https://huggingface.co/datasets/GaussianWorld/scene_splat_7k) — fallback dataset (ScanNet/Replica-based).
+- [Gaussian Grouping](https://github.com/lkeab/gaussian-grouping) — ECCV 2024, referenced for v2 production upload flow.
 - [SAGS](https://github.com/XuHu0529/SAGS) — training-free SAM lifting (backup plan).
 - [LangSplat](https://github.com/minghanqin/LangSplat) — CVPR 2024, open-vocabulary splat querying (reference).
 - [Nerfstudio](https://docs.nerf.studio/) — reference framework for splat workflows.
@@ -549,4 +560,4 @@ sceneagent/
 - [pgvector](https://github.com/pgvector/pgvector) — vector similarity in Postgres.
 - [mcp (Python SDK)](https://github.com/modelcontextprotocol/python-sdk) — MCP server implementation.
 - [LangGraph](https://langchain-ai.github.io/langgraph/) — agent framework.
-- [Polycam](https://poly.cam/) — fallback splat capture.
+- [huggingface-cli](https://huggingface.co/docs/huggingface_hub/guides/cli) — used to download the InteriorGS scene.
