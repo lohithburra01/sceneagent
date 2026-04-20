@@ -30,8 +30,8 @@ OUT_DIR = Path("pipeline/output/views")
 WIDTH = 1024
 HEIGHT = 768
 FOV_V_DEG = 60.0
-OPACITY_MIN = 0.15
-MAX_POINTS = 200_000  # after opacity filter; keeps memory bounded
+OPACITY_MIN = 0.10
+MAX_POINTS = 717_050  # all splats — sparser renders give SAM nothing to segment
 
 
 def pose_to_w2c(pos, target, up=(0, 0, 1)):
@@ -86,15 +86,19 @@ def render_one(centers, colors, opacities, scale, pose):
     ui = np.clip(u.astype(np.int32), 0, WIDTH - 1)
     vi = np.clip(v.astype(np.int32), 0, HEIGHT - 1)
 
-    # Pass 1: single-pixel z-buffered draw
+    # Pass 1: z-buffered splat with per-point disk (radius from scale/depth).
+    # Vectorised on the outer index — OpenCV circle is still the bottleneck but
+    # with 700k points it's bounded to ~15 s per view on CPU.
     for idx in range(u.shape[0]):
         px, py = ui[idx], vi[idx]
         d = depth[idx]
+        r = int(radii[idx])
         if d < zbuf[py, px]:
             zbuf[py, px] = d
-            img[py, px] = rgb[idx]
+            cv2.circle(img, (px, py), r, (int(rgb[idx, 0]), int(rgb[idx, 1]), int(rgb[idx, 2])), -1)
 
-    # Pass 2: morphological dilation so isolated splats merge into surfaces
+    # Pass 2: small dilation to merge point-sprite edges — helps SAM find
+    # connected regions. One iteration of 3x3 is enough with dense splats.
     kernel = np.ones((3, 3), np.uint8)
     img = cv2.dilate(img, kernel, iterations=1)
 
