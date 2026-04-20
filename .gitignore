@@ -16,4 +16,6 @@ Thumbs.db
 *.pt
 *.pth
 _hf_cache/
-pipeline/output/
+pipeline/output/*
+!pipeline/output/metrics.json
+!pipeline/output/object_inventory.json

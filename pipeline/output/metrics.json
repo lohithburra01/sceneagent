@@ -1,0 +1,329 @@
+{
+  "num_predicted": 0,
+  "num_ground_truth": 240,
+  "tp": 0,
+  "fp": 0,
+  "fn": 240,
+  "precision": 0,
+  "recall": 0.0,
+  "f1": 0,
+  "iou_threshold": 0.25,
+  "per_class": {
+    "jar": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "teapot": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "cabinet": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "tray": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3
+    },
+    "side_table": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3
+    },
+    "decorative_painting": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3
+    },
+    "suspended_ceiling": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "cup": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 24
+    },
+    "door": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "dining_plate": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 10
+    },
+    "book": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "billboard": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "downlights": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 14
+    },
+    "box": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "vase": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "coffee_maker": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "chocolate": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "decorative_pendant": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "plant": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "chandelier": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "multi_person_sofa": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "basket": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "wine": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 70
+    },
+    "placemat": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "bread": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "candle": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "ornament": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 4
+    },
+    "wardrobe": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "fruit": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 13
+    },
+    "wine_glass": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 5
+    },
+    "stool": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3
+    },
+    "canned_food": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "console": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "spotlight": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 25
+    },
+    "cake": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "table": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "spoon": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "high_chair": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 10
+    },
+    "chair": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "window": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "body_pillow": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "combination": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "sofa": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "kettle": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "carpet": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    }
+  },
+  "note": "InteriorGS 0003_839989 (wine bar). Our splat-render step (Puppeteer + @mkkellogg/gaussian-splats-3d headless) could not load the compressed-packed .ply format within the time budget, so no per-view masks were generated and backproject.py produced an empty inventory. Pipeline code (segment.py / backproject.py / evaluate.py) is implemented and can be run once a compatible 2D rasterizer is plugged in."
+}
