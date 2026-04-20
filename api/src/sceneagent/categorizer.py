@@ -50,7 +50,7 @@ Return ONLY the JSON object."""
 
 
 _KEYWORDS = {
-    "issue": ["sticks", "broken", "leak", "loud", "noisy", "crack", "warning", "careful", "problem"],
+    "issue": ["sticks", "broken", "leak", "loud", "noisy", "crack", "warning", "careful", "problem", "flicker", "needs fix", "fixing", "defect", "worn"],
     "included": ["included", "comes with", "stays", "belongs", "stay with"],
     "spec": ["m ", "meter", "metre", "square", "sqft", "sq ft", "sqm", "cm", "mm", "kg"],
     "story": ["year", "century", "19", "was a", "used to be", "history"],
