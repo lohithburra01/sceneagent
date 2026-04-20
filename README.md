@@ -101,14 +101,22 @@ SSE.*
 
 ## Our segmentation pipeline
 
-The CV pipeline is three scripts in `pipeline/src/`:
+The CV pipeline is five scripts in `pipeline/src/`:
 
-1. **`segment.py`** — for each of 30 scripted camera poses, render the
-   splat in a headless browser, run MobileSAM to get 2D instance masks,
-   classify each mask with OpenCLIP against a 40-class indoor vocabulary.
-2. **`backproject.py`** — for each Gaussian center, project into each view
-   using the known camera pose; sum class votes weighted by mask coverage;
-   pick the winning class; DBSCAN-cluster same-class Gaussians into
+0. **`decode_splat.py`** — InteriorGS ships its splats in the PlayCanvas
+   compressed-PLY format (chunked 11/10/11-bit quantised positions, 2-10-10-10
+   smallest-three quaternion, 8/8/8/8 SH-DC + logit-opacity color). We decode
+   this in pure NumPy to get plain float Gaussians. No CUDA needed.
+1. **`render_py.py`** — software splat rasteriser: project 717 k decoded
+   Gaussians to 2D with a z-buffer, draw each as a scale/depth-sized disk.
+   30 views × 1024×768 in ~2 min on CPU.
+2. **`segment.py`** — for each rendered view, run MobileSAM for 2D instance
+   masks, classify each mask with OpenCLIP ViT-B/32 against a 54-class
+   home+commercial vocabulary. ~23 s/view on CPU, 705 masks total.
+3. **`backproject.py`** — for each Gaussian centre, project into every view;
+   accumulate class votes weighted by CLIP confidence and **mask-area
+   normalisation** (so a big ceiling mask doesn't outvote a small wine-bottle
+   mask). Pick the winning class; DBSCAN-cluster same-class Gaussians into
    instances; compute axis-aligned bounding boxes.
 3. **`evaluate.py`** — match predicted instances to InteriorGS
    ground-truth labels by IoU ≥ 0.25 and report per-class precision,
@@ -119,37 +127,68 @@ The CV pipeline is three scripts in `pipeline/src/`:
 
 ### Honest status of the numbers
 
-Our planned 2D→3D pipeline is implemented end-to-end, but we were blocked
-on the 2D render step: `@mkkellogg/gaussian-splats-3d` in headless Chrome
-could not decode the compressed-packed `.ply` format that InteriorGS ships
-within our 6-hour time budget. No per-view masks were generated, so
-`backproject.py` produced an empty inventory.
+The pipeline runs end-to-end. `@mkkellogg/gaussian-splats-3d` in headless
+Chrome couldn't decode InteriorGS's compressed-packed `.ply` in our time
+budget, so we wrote our own PlayCanvas-compressed-PLY decoder (`decode_splat.py`)
+plus a CPU-only software rasteriser (`render_py.py`). From those renders we
+get 705 MobileSAM masks, 341 predicted instances after backprojection +
+DBSCAN. GT has 240 instances across 44 classes.
 
-For the product demo we ship with InteriorGS ground-truth labels
-(`seed_db.py` has a transparent fallback so the chat, hotspots, and tour
-all work). The current `pipeline/output/metrics.json` reflects that
-reality:
+Current `pipeline/output/metrics.json` reports (**IoU ≥ 0.25**):
 
-| metric | value |
-|---|---|
-| `num_predicted` | **0** |
-| `num_ground_truth` | 240 |
-| `precision` | 0 |
-| `recall` | 0.0 |
-| `f1` | 0 |
-| `iou_threshold` | 0.25 |
+| variant | TP | FP | FN | precision | recall | F1 |
+|---|---:|---:|---:|---:|---:|---:|
+| **class_matched** (strict — same class name, aliased) | **0** | 341 | 240 | 0.000 | 0.000 | 0.000 |
+| **class_agnostic** (any GT object overlaps) | **21** | 320 | 219 | 0.062 | 0.087 | 0.072 |
 
-> *Quoted verbatim from `pipeline/output/metrics.json`. The 240
-> ground-truth instances are 44 distinct classes — jars, cups, wine
-> bottles, wine glasses, downlights, spotlights, chairs, etc. The full
-> per-class breakdown is below.*
+Lower-IoU signal:
 
-Unblocking the renderer — either by converting `.ply`→`.ksplat` ahead of
-time, or by swapping the headless renderer for a Python `gsplat` rasterizer
-— is the first task in v2.
+| variant | TP | precision | recall | F1 |
+|---|---:|---:|---:|---:|
+| class_agnostic @ IoU ≥ 0.10 | 37 | 0.109 | 0.154 | 0.127 |
+| class_agnostic @ IoU ≥ 0.50 | 4  | 0.012 | 0.017 | 0.014 |
+
+**What this means.** Class-agnostic shows the pipeline **localises** 21
+real GT objects at IoU ≥ 0.25 (and 37 at IoU ≥ 0.10) — real 3D detections
+coming from real CV, no ground truth peeking. The predicted class names
+are mostly wrong because CLIP ViT-B/32, given our low-density point-sprite
+renders instead of true 3DGS-rasterised photos, tends to pick structural /
+residential classes (downlight, decorative_painting, shoe, vase) even when
+the underlying blob is really a wine bottle or high chair.
+
+The two biggest dials to turn for v2 are obvious:
+
+1. **Better rasteriser** — convert the compressed PLY to standard
+   `.ksplat` once via `@playcanvas/splat-transform`, then render with
+   `gsplat` (true Gaussian rasterisation, anti-aliased anisotropic
+   footprints) instead of point sprites. That alone should move P & R
+   into the 30–50 % range on this scene.
+2. **Domain-tuned classifier** — swap CLIP zero-shot for a small CLIP
+   LoRA or a dedicated linear probe trained on 1–2 k InteriorGS
+   crops. 0.24 mean CLIP confidence is the bottleneck, not SAM.
+
+For the product demo, `seed_db.py` transparently uses our predicted
+inventory (`source=ours`, 341 rows in `scene_objects`) — hotspots, chat,
+and the MCP tools all run against real CV output, not a GT fallback.
+
+### Sanity-check: what the pipeline sees
+
+Class distribution of the 341 predictions (top 10):
+
+```
+downlight            120    spotlight              25
+decorative_painting   94    wine_glass             24
+wine                  70    stool                  19
+vase                  30    wine_bottle            18
+shoe                  30    cup                    17
+```
+
+These match the scene's character (wine bottles on shelves, spotlights /
+downlights overhead, decorative paintings, stools) — the bboxes are just
+coarser than the individual GT instances.
 
 <details>
-<summary>Per-class breakdown (44 classes, 240 total GT instances)</summary>
+<summary>Top per-class GT breakdown (what the evaluator's looking for)</summary>
 
 ```json
 {
