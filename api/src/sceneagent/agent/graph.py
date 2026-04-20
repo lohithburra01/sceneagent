@@ -162,7 +162,7 @@ def _extract_json_object(text: str) -> Optional[dict[str, Any]]:
 def _heuristic_plan(state: AgentState) -> dict[str, Any]:
     """No-LLM planner used when GEMINI_API_KEY is absent."""
     msg = state.user_message.lower()
-    if state.iterations == 0:
+    if state.iterations <= 1:
         if "issue" in msg or "problem" in msg or "wrong" in msg:
             return {"tool": "list_hotspots", "args": {"category": "issue"}}
         if "include" in msg:
