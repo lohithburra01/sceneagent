@@ -1,0 +1,137 @@
+# Postgres with pgvector. StatefulSet keeps the PVC stable across restarts.
+# The init schema from ../db/init/001_schema.sql is mounted via ConfigMap into
+# /docker-entrypoint-initdb.d/ so it auto-applies on first boot (empty PGDATA).
+#
+# NOTE: the ConfigMap below embeds the schema inline so `kubectl apply -f k8s/`
+# works without any extra flags. If you edit db/init/001_schema.sql you must
+# resync this ConfigMap (see k8s/README.md -> "regenerating the init
+# configmap").
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: sceneagent
+data:
+  001_schema.sql: |
+    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    CREATE TABLE IF NOT EXISTS scenes (
+      id UUID PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      address TEXT,
+      splat_url TEXT NOT NULL,
+      camera_trajectory JSONB NOT NULL,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS scene_objects (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      scene_id UUID REFERENCES scenes(id) ON DELETE CASCADE,
+      instance_id INT NOT NULL,
+      class_name TEXT NOT NULL,
+      room_label TEXT,
+      centroid DOUBLE PRECISION[] NOT NULL,
+      bbox_min DOUBLE PRECISION[] NOT NULL,
+      bbox_max DOUBLE PRECISION[] NOT NULL,
+      clip_embedding VECTOR(512) NOT NULL,
+      source TEXT NOT NULL DEFAULT 'ours',
+      UNIQUE (scene_id, instance_id, source)
+    );
+    CREATE INDEX IF NOT EXISTS idx_scene_objects_embedding
+      ON scene_objects USING hnsw (clip_embedding vector_cosine_ops);
+    CREATE TABLE IF NOT EXISTS notes (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      scene_id UUID REFERENCES scenes(id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
+      video_timestamp DOUBLE PRECISION NOT NULL,
+      category TEXT,
+      category_confidence REAL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS hotspots (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      note_id UUID UNIQUE REFERENCES notes(id) ON DELETE CASCADE,
+      object_id UUID REFERENCES scene_objects(id) ON DELETE SET NULL,
+      match_confidence REAL NOT NULL,
+      position DOUBLE PRECISION[] NOT NULL,
+      auto_accepted BOOLEAN NOT NULL DEFAULT TRUE
+    );
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: sceneagent
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: sceneagent
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              value: sceneagent
+            - name: POSTGRES_PASSWORD
+              value: sceneagent
+            - name: POSTGRES_DB
+              value: sceneagent
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "sceneagent"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "sceneagent"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

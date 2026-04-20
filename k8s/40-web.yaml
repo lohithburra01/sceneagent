@@ -1,0 +1,54 @@
+# Next.js frontend. Exposed as a NodePort so `minikube service web --url`
+# returns something the browser can hit without a full Ingress setup.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: sceneagent
+  labels:
+    app: web
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      nodePort: 30000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: sceneagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: sceneagent-web:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            # In-cluster URL of the api service. If you're port-forwarding or
+            # using the browser from the host, you may need to override this
+            # to point at `minikube service api --url`.
+            - name: NEXT_PUBLIC_API_URL
+              value: http://api:8000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10

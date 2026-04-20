@@ -8,9 +8,8 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY README.md ./
-RUN pip install --no-cache-dir .
-
 COPY src/ ./src/
+RUN pip install --no-cache-dir .
 
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1

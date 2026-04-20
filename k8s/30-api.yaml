@@ -1,0 +1,84 @@
+# FastAPI service. The image `sceneagent-api:dev` is built locally inside the
+# minikube docker daemon by k8s/apply.sh -- hence imagePullPolicy: IfNotPresent
+# (a real registry pull would fail).
+#
+# Data volume: the scene files (splat .ply, object_inventory.json, etc.) live
+# on the HOST at ./data and are mounted into minikube at /mnt/data by
+# `minikube mount ./data:/mnt/data`. We then surface that path inside the pod
+# at /app/data (read-only). See k8s/README.md.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: sceneagent
+  labels:
+    app: api
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: sceneagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: sceneagent-api:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - secretRef:
+                name: agent-secrets
+          env:
+            - name: DATABASE_URL
+              value: postgresql://sceneagent:sceneagent@postgres.sceneagent.svc.cluster.local:5432/sceneagent
+            - name: REDIS_URL
+              value: redis://redis.sceneagent.svc.cluster.local:6379/0
+            - name: LLM_MODEL
+              value: gemini-2.0-flash
+            - name: VLM_MODEL
+              value: gemini-2.0-flash
+            - name: SCENE_ID
+              value: demo
+          volumeMounts:
+            - name: scene-data
+              mountPath: /app/data
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+      volumes:
+        - name: scene-data
+          hostPath:
+            # /mnt/data is populated by `minikube mount ./data:/mnt/data` on
+            # the host. Swap this for a PVC if you're not on minikube.
+            path: /mnt/data
+            type: DirectoryOrCreate

@@ -48,16 +48,40 @@ def get_inventory() -> tuple[list[dict], str]:
 
 
 def compute_embeddings(inv: list[dict]) -> list[list[float]]:
-    import torch
-    import open_clip
-    model, _, _ = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
-    tokenizer = open_clip.get_tokenizer("ViT-B-32")
-    model.eval()
+    """Compute 512-d embeddings for each object. Tries real CLIP first; if torch
+    or open_clip are unavailable, falls back to a deterministic hash-based vector
+    so the DB still works end-to-end. The API side uses the same fallback if it
+    can't load CLIP either, so ranking stays consistent."""
     prompts = [f"a {o['class_name'].replace('_', ' ')}" for o in inv]
-    with torch.no_grad():
-        emb = model.encode_text(tokenizer(prompts))
-        emb = emb / emb.norm(dim=-1, keepdim=True)
-    return emb.tolist()
+    try:
+        import torch
+        import open_clip
+        model, _, _ = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
+        tokenizer = open_clip.get_tokenizer("ViT-B-32")
+        model.eval()
+        with torch.no_grad():
+            emb = model.encode_text(tokenizer(prompts))
+            emb = emb / emb.norm(dim=-1, keepdim=True)
+        return emb.tolist()
+    except Exception as exc:
+        print(f"WARN: real CLIP unavailable ({exc}); using deterministic hash embeddings")
+        import hashlib
+        out = []
+        for p in prompts:
+            # Seed a 512-d float vector from sha256 of the prompt. Normalized.
+            h = hashlib.sha256(p.encode()).digest()
+            # Stretch 32 bytes → 512 floats using repeated hashing
+            buf = b""
+            seed = h
+            while len(buf) < 512 * 4:
+                seed = hashlib.sha256(seed).digest()
+                buf += seed
+            import struct
+            vals = struct.unpack(f"<{512}f", buf[: 512 * 4])
+            import math
+            norm = math.sqrt(sum(v * v for v in vals)) or 1.0
+            out.append([v / norm for v in vals])
+        return out
 
 
 async def seed():
