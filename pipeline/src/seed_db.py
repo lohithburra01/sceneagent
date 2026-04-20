@@ -30,7 +30,7 @@ def get_inventory() -> tuple[list[dict], str]:
             return inv, "ours"
     # GT fallback — InteriorGS labels.json is a flat list of
     # {ins_id, label, bounding_box:[8 xyz-corners]}.
-    raw = json.loads(GT_FALLBACK_PATH.read_text())
+    raw = json.loads(GT_FALLBACK_PATH.read_text(encoding="utf-8"))
     inv = []
     for obj in raw:
         bb = obj.get("bounding_box")
@@ -132,7 +132,7 @@ async def seed():
             except Exception as exc:
                 print(f"skip instance {o['instance_id']}: {exc}")
 
-        notes = json.loads(Path("data/scene/demo/demo_notes.json").read_text())
+        notes = json.loads(Path("data/scene/demo/demo_notes.json").read_text(encoding="utf-8"))
         await con.execute("DELETE FROM notes WHERE scene_id=$1", scene_id)
         for n in notes:
             await con.execute(
