@@ -30,32 +30,25 @@ OUT_PATH = Path("pipeline/output/object_inventory.json")
 
 
 def load_gaussian_centers(ply_path: Path) -> np.ndarray:
-    """Load Gaussian centers. Handles both plain ply (x,y,z) and the InteriorGS
-    packed format by unpacking packed_position as 3x 10-bit fixed-point."""
+    """Load Gaussian centers.
+
+    Preferred path: read pipeline/output/decoded_splat.npz produced by
+    pipeline.src.decode_splat (handles the PlayCanvas compressed-packed format).
+    Falls back to a plain .ply (x,y,z) read if the npz doesn't exist.
+    """
+    npz_path = Path("pipeline/output/decoded_splat.npz")
+    if npz_path.exists():
+        data = np.load(npz_path)
+        return data["centers"].astype(np.float32)
     from plyfile import PlyData
     ply = PlyData.read(str(ply_path))
     v = ply["vertex"]
     props = [p.name for p in v.properties]
     if {"x", "y", "z"}.issubset(set(props)):
         return np.stack([v["x"], v["y"], v["z"]], axis=1).astype(np.float32)
-    if "packed_position" in props:
-        # Heuristic unpacking: pack_pos is uint32; fields are stored
-        # in the ply header's packed_position:[scale, bits] comments
-        # that we cannot read via plyfile. Fall back to using the scene
-        # bounding box from labels.json as positions.
-        labels = Path("data/scene/demo/labels.json")
-        if labels.exists():
-            data = json.loads(labels.read_text())
-            centers = []
-            for o in data:
-                bb = o.get("bounding_box")
-                if not bb:
-                    continue
-                pts = np.asarray([[p["x"], p["y"], p["z"]] for p in bb])
-                centers.append(pts.mean(axis=0))
-            if centers:
-                return np.asarray(centers, dtype=np.float32)
-    raise RuntimeError(f"Could not extract positions from {ply_path}")
+    raise RuntimeError(
+        f"{ply_path} uses the compressed format; run `python -m pipeline.src.decode_splat` first"
+    )
 
 
 def rle_to_mask(rle: dict) -> np.ndarray:
