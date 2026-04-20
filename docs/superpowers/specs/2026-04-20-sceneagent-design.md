@@ -4,7 +4,7 @@
 **Working title:** SceneAgent (rebrand before publishing — candidates: ListingTwin, TwinListing, OpenHouse AI)
 **Author:** Lohith Burra
 **Purpose:** Portfolio project targeting 3D Computer Vision + Agentic AI + Digital Twin roles (2026 JD landscape).
-**Build window:** 1–2 days. **No Colab, no splat training, no segmentation run.** The scene is sourced from **InteriorGS** — a 2025 dataset of 1,000 pre-trained Gaussian splats with per-object semantic labels, instance IDs, 3D oriented bounding boxes, floorplans, and occupancy maps. We download one scene and start building.
+**Build window:** 6 hours, parallel execution across 4 tracks. Scene is downloaded from **InteriorGS** (pre-trained Gaussian splat — saves 90 min of GPU training) but **we run our own 2D→3D semantic segmentation pipeline** using SAM + CLIP + multi-view backprojection, and evaluate it against InteriorGS's ground-truth labels. The splat is a dataset crutch; the segmentation is ours.
 
 ---
 
@@ -70,7 +70,7 @@
 | Component | v1 behavior | README explanation |
 |---|---|---|
 | Video → splat training pipeline | **Skipped entirely.** Scene is downloaded from [InteriorGS](https://huggingface.co/datasets/spatialverse/InteriorGS). Upload endpoint exists in code path but the demo uses the downloaded scene. | "Splat training takes ~45 min on a T4 GPU. Production would queue this via Celery + GPU worker; the demo uses an InteriorGS scene (pre-trained, pre-labeled) for reproducibility." |
-| 3D semantic segmentation | **Skipped entirely.** InteriorGS ships labels.json with per-object class names + instance IDs + 3D bounding boxes already computed. | "Production would run Gaussian Grouping ([lkeab/gaussian-grouping](https://github.com/lkeab/gaussian-grouping)) or SAGS on user-uploaded scenes; for the demo, InteriorGS labels are used." |
+| 3D semantic segmentation | **Real pipeline runs.** Puppeteer + @mkkellogg/gaussian-splats-3d renders 30 views from the splat; MobileSAM produces 2D instance masks; OpenCLIP zero-shot assigns class names; our backprojection code projects masks onto Gaussians + majority-votes; DBSCAN clusters into instances. Output compared to InteriorGS `labels.json` ground truth — per-class precision/recall/mIoU reported in README. | If segmentation quality is too low by hour 4, product falls back to InteriorGS GT labels but README documents our pipeline with whatever metrics we got (honest portfolio artifact). |
 | Notes storage for demo | **JSON file** (`demo_notes.json`) with hardcoded timestamped notes. Also addable live via scrubber UI. | "Demo ships with pre-written notes for reproducibility; the scrubber UI lets you add more live." |
 | Splat training service | Celery worker skeleton present but not wired to GPU. Redis container runs. | "Celery infrastructure is in place; production would attach GPU nodes to the worker pool." |
 
@@ -156,11 +156,20 @@
 - **openclip-torch** (CLIP embeddings, runs on CPU)
 - **numpy**, **scipy** (post-processing)
 
-### 3D scene source (no training required)
-- **InteriorGS dataset** ([HuggingFace](https://huggingface.co/datasets/spatialverse/InteriorGS)) — one scene downloaded, ships pre-trained compressed Gaussian splat + per-object labels.json + floorplan + occupancy map
-- **SuperSplat-compressed .ply** format (the splat)
-- **OpenCLIP** ViT-B/32 — run **only** on InteriorGS label-derived canonical views to compute per-object embeddings for the note matcher (one-time, ~2 min on CPU)
-- **Gaussian Grouping** referenced in README for production upload flow, not run in v1
+### 3D scene source (no splat training required)
+- **InteriorGS dataset** ([HuggingFace](https://huggingface.co/datasets/spatialverse/InteriorGS)) — one scene downloaded. Ships the pre-trained compressed Gaussian splat. Their `labels.json` is used **only as evaluation ground truth**, not as the product's label source.
+- **SuperSplat-compressed .ply** format (the splat) — loaded directly by @mkkellogg/gaussian-splats-3d
+
+### Our segmentation pipeline (runs in Track C, ~2 hours wall time)
+- **Puppeteer + @mkkellogg/gaussian-splats-3d** — headless Chrome renders 30 views from the splat along a scripted camera path covering all rooms
+- **MobileSAM** ([ChaoningZhang/MobileSAM](https://github.com/ChaoningZhang/MobileSAM)) — 2D instance mask generator, 5× faster than vanilla SAM on CPU
+- **OpenCLIP ViT-B/32** — zero-shot classification of each mask against a curated 40-class home-object vocabulary
+- **Our backprojection code (~80 lines)** — for each Gaussian center, project into each view using known camera pose; vote on class label by summing contributions across all views; assign winning class
+- **DBSCAN (scikit-learn)** — cluster per-class Gaussians spatially → instance IDs
+- **Evaluation (~40 lines)** — compare predicted per-instance labels to InteriorGS `labels.json` ground truth; compute per-class precision/recall/mIoU; dump `metrics.json` for the README
+
+### Note matcher (unchanged)
+- **OpenCLIP text embeddings** of object descriptions for note matcher (runs against *our* labels, with GT-label fallback)
 
 ### Data
 - **PostgreSQL 16** + **pgvector** extension (CLIP embeddings indexed for cosine similarity)
