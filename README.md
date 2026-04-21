@@ -101,91 +101,112 @@ SSE.*
 
 ## Our segmentation pipeline
 
-The CV pipeline is five scripts in `pipeline/src/`:
+The CV pipeline is seven scripts in `pipeline/src/` (P1 swap-in: `gsplat`
++ SAM 3 + Hungarian eval; the original CPU-only `render_py.py` and
+`segment.py` remain for the no-CUDA fallback path):
 
 0. **`decode_splat.py`** — InteriorGS ships its splats in the PlayCanvas
    compressed-PLY format (chunked 11/10/11-bit quantised positions, 2-10-10-10
    smallest-three quaternion, 8/8/8/8 SH-DC + logit-opacity color). We decode
-   this in pure NumPy to get plain float Gaussians. No CUDA needed.
-1. **`render_py.py`** — software splat rasteriser: project 717 k decoded
-   Gaussians to 2D with a z-buffer, draw each as a scale/depth-sized disk.
-   30 views × 1024×768 in ~2 min on CPU.
-2. **`segment.py`** — for each rendered view, run MobileSAM for 2D instance
-   masks, classify each mask with OpenCLIP ViT-B/32 against a 54-class
-   home+commercial vocabulary. ~23 s/view on CPU, 705 masks total.
-3. **`backproject.py`** — for each Gaussian centre, project into every view;
-   accumulate class votes weighted by CLIP confidence and **mask-area
-   normalisation** (so a big ceiling mask doesn't outvote a small wine-bottle
-   mask). Pick the winning class; DBSCAN-cluster same-class Gaussians into
-   instances; compute axis-aligned bounding boxes.
-3. **`evaluate.py`** — match predicted instances to InteriorGS
-   ground-truth labels by IoU ≥ 0.25 and report per-class precision,
-   recall, and F1 to `pipeline/output/metrics.json`.
-4. **`seed_db.py`** — loads either our predicted inventory or, if empty,
+   this in pure NumPy to get plain float Gaussians.
+1. **`npz_to_ply.py`** — converts the decoded `.npz` into a standard
+   3DGS 14-channel `.ply` (xyz, normals, f_dc_0..2, opacity logit, log
+   scales, wxyz quat) so any 3DGS renderer can load it.
+2. **`gen_camera_poses.py`** — samples 30 positions on a 6×6 grid
+   *inside* the scene bbox at floor + 1.6 m (eye height), each looking
+   at the nearest non-structural GT centroid. Replaces the v1
+   outside-perimeter rings that produced cameras-see-floaters renders.
+3. **`render_gsplat.py`** — `gsplat`'s CUDA rasterizer renders 30
+   800×600 RGB+depth views in ~3.3 s total on an RTX 4060 Laptop
+   (sm_89, JIT-compiled extension, OpenCV view convention).
+4. **`segment_sam3.py`** — for each view, prompts SAM 3 with each of
+   91 interior vocab classes (`bar counter`, `wine glass`, …), keeps
+   masks above the confidence threshold. ~6.9 s/view on the 4060
+   with bf16 autocast. Falls back to MobileSAM + open-CLIP if SAM 3
+   isn't available.
+5. **`backproject.py`** — for each Gaussian centre, projects into every
+   view; accumulates per-class scores weighted by mask-area normalisation
+   (so a big ceiling mask doesn't outvote a small wine-bottle mask).
+   DBSCAN-clusters same-class Gaussians into instances.
+6. **`evaluate.py`** — Hungarian-matched bipartite assignment between
+   our predicted instances and the InteriorGS GT labels, with the
+   structural classes (wall/floor/ceiling/window/door/stairs/column)
+   dropped from both sides before matching. Reports class-matched and
+   class-agnostic F1 at IoU thresholds 0.10 / 0.25 / 0.50.
+7. **`seed_db.py`** — loads either our predicted inventory or, if empty,
    the InteriorGS ground-truth labels (transparent fallback) into Postgres
    so the product demo still works.
 
 ### Honest status of the numbers
 
-The pipeline runs end-to-end. `@mkkellogg/gaussian-splats-3d` in headless
-Chrome couldn't decode InteriorGS's compressed-packed `.ply` in our time
-budget, so we wrote our own PlayCanvas-compressed-PLY decoder (`decode_splat.py`)
-plus a CPU-only software rasteriser (`render_py.py`). From those renders we
-get 705 MobileSAM masks, 341 predicted instances after backprojection +
-DBSCAN. GT has 240 instances across 44 classes.
+The full pipeline runs end-to-end. From `decoded_splat.npz` →
+`standard_3dgs.ply` (47 MB) → 30 gsplat views → SAM 3 with 91-class
+vocab → 427 masks → backproject + DBSCAN → 254 predicted instances vs
+240 GT. Total wall-clock on the 4060 Laptop: ~5 min (gsplat ~3 s,
+SAM 3 ~3 min 26 s, backproject ~30 s, eval ~1 s).
 
-Current `pipeline/output/metrics.json` reports (**IoU ≥ 0.25**):
+Current `pipeline/output/metrics.json` reports:
 
-| variant | TP | FP | FN | precision | recall | F1 |
-|---|---:|---:|---:|---:|---:|---:|
-| **class_matched** (strict — same class name, aliased) | **0** | 341 | 240 | 0.000 | 0.000 | 0.000 |
-| **class_agnostic** (any GT object overlaps) | **21** | 320 | 219 | 0.062 | 0.087 | 0.072 |
+| variant | IoU | TP | FP | FN | precision | recall | F1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **class_matched** | 0.25 | **4**  | 228 | 232 | 0.017 | 0.017 | **0.017** |
+| class_matched     | 0.10 | 10 | 222 | 226 | 0.043 | 0.042 | 0.043 |
+| class_matched     | 0.50 | 2  | 230 | 234 | 0.009 | 0.008 | 0.009 |
+| **class_agnostic**| 0.25 | **16** | 216 | 220 | 0.069 | 0.068 | **0.068** |
+| class_agnostic    | 0.10 | 31 | 201 | 205 | 0.134 | 0.131 | 0.132 |
+| class_agnostic    | 0.50 | 3  | 229 | 233 | 0.013 | 0.013 | 0.013 |
 
-Lower-IoU signal:
+**What changed vs v1 (`render_py` + MobileSAM + greedy matching, 0% class-matched):**
 
-| variant | TP | precision | recall | F1 |
-|---|---:|---:|---:|---:|
-| class_agnostic @ IoU ≥ 0.10 | 37 | 0.109 | 0.154 | 0.127 |
-| class_agnostic @ IoU ≥ 0.50 | 4  | 0.012 | 0.017 | 0.014 |
+- Real GPU rasterisation (gsplat CUDA, sm_89) gives photo-like RGB+depth
+  views instead of CPU point-sprite renders that lose the small objects.
+- SAM 3 text-prompted segmentation against a 91-class open vocab —
+  the prompt **is** the class label, no separate CLIP classify step.
+- Hungarian matching instead of greedy first-best-IoU per prediction.
+- Structural classes filtered before matching so wall/floor/ceiling
+  trivially-perfect matches don't bias the score.
 
-**What this means.** Class-agnostic shows the pipeline **localises** 21
-real GT objects at IoU ≥ 0.25 (and 37 at IoU ≥ 0.10) — real 3D detections
-coming from real CV, no ground truth peeking. The predicted class names
-are mostly wrong because CLIP ViT-B/32, given our low-density point-sprite
-renders instead of true 3DGS-rasterised photos, tends to pick structural /
-residential classes (downlight, decorative_painting, shoe, vase) even when
-the underlying blob is really a wine bottle or high chair.
+**What this means.** Class-agnostic shows the pipeline localises **16**
+real GT objects at IoU ≥ 0.25 (and 31 at IoU ≥ 0.10) — real 3D
+detections from real CV, no GT peeking. The class-matched gap (16
+agnostic vs 4 matched at IoU ≥ 0.25) is dominated by class-name
+mismatch with InteriorGS's wine-bar specific labels: SAM 3 calls
+something "bottle" or "glass" while GT calls it "wine"; SAM 3 says
+"chair" where GT says "high chair". Synonym groups in `evaluate.py`
+absorb the obvious ones (wine ↔ wine_bottle ↔ bottle, glass ↔
+wine_glass, downlight ↔ spotlight, pillow ↔ cushion) but the long
+tail is open-ended.
 
-The two biggest dials to turn for v2 are obvious:
+The two biggest dials to turn for v3:
 
-1. **Better rasteriser** — convert the compressed PLY to standard
-   `.ksplat` once via `@playcanvas/splat-transform`, then render with
-   `gsplat` (true Gaussian rasterisation, anti-aliased anisotropic
-   footprints) instead of point sprites. That alone should move P & R
-   into the 30–50 % range on this scene.
-2. **Domain-tuned classifier** — swap CLIP zero-shot for a small CLIP
-   LoRA or a dedicated linear probe trained on 1–2 k InteriorGS
-   crops. 0.24 mean CLIP confidence is the bottleneck, not SAM.
+1. **Pose sampling.** A few of the 30 views currently look straight at
+   a wall and yield 0 masks. Dropping those and re-sampling toward the
+   high-density object regions should add ~5–10 TP without changing
+   anything else.
+2. **Domain-tuned text prompts.** Replacing the literal class-name
+   prompt with a short LLM-generated description per class
+   (`"a wine bottle on a bar shelf"`) is known to lift open-vocab
+   recall ~2× on indoor benchmarks.
 
 For the product demo, `seed_db.py` transparently uses our predicted
-inventory (`source=ours`, 341 rows in `scene_objects`) — hotspots, chat,
+inventory (`source=ours`, 254 rows in `scene_objects`) — hotspots, chat,
 and the MCP tools all run against real CV output, not a GT fallback.
 
 ### Sanity-check: what the pipeline sees
 
-Class distribution of the 341 predictions (top 10):
+Class distribution of the 254 predictions (top 10):
 
 ```
-downlight            120    spotlight              25
-decorative_painting   94    wine_glass             24
-wine                  70    stool                  19
-vase                  30    wine_bottle            18
-shoe                  30    cup                    17
+glass         58    desk           16
+plant         27    table          15
+cushion       26    chair          12
+window        18    tray            9
+                    coffee table    6
+                    sculpture       6
 ```
 
-These match the scene's character (wine bottles on shelves, spotlights /
-downlights overhead, decorative paintings, stools) — the bboxes are just
-coarser than the individual GT instances.
+These match the scene's character (a wine bar with bottles/glasses
+on counters, plants and cushions in the lounge, lots of seating).
 
 <details>
 <summary>Top per-class GT breakdown (what the evaluator's looking for)</summary>
