@@ -15,6 +15,7 @@ export default function InventorySidebar({ detections, metrics }: Props) {
   const setActive = useViewerStore((s) => s.setActiveObject);
   const setHover = useViewerStore((s) => s.setHoveredObject);
   const activeId = useViewerStore((s) => s.activeObjectId);
+  const setInputFocused = useViewerStore((s) => s.setInputFocused);
   const [filter, setFilter] = useState("");
   // Default OFF — clicking should highlight only, not yank the camera.
   // Toggle on in the header when you actually want auto-fly.
@@ -50,6 +51,12 @@ export default function InventorySidebar({ detections, metrics }: Props) {
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") (e.target as HTMLInputElement).blur();
+          }}
           placeholder="filter by class…"
           className={clsx(
             "mt-3 w-full bg-neutral-900/70 border border-neutral-800 rounded-md",

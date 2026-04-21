@@ -33,6 +33,10 @@ export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProp
   const rafRef = useRef<number | null>(null);
 
   const flyToPosition = useViewerStore((s) => s.flyToPosition);
+  const inputFocused = useViewerStore((s) => s.inputFocused);
+  // ref tracked for the rAF / keydown closures so they always read latest
+  const inputFocusedRef = useRef(inputFocused);
+  inputFocusedRef.current = inputFocused;
 
   // mount once
   useEffect(() => {
@@ -165,63 +169,22 @@ export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProp
     let raf = 0;
     let last = performance.now();
 
-    function isTypingTarget(e?: KeyboardEvent): boolean {
-      // Check both: composedPath (fires through shadow DOM, gives us the
-      // actual click target chain) AND document.activeElement (the
-      // currently-focused element). Either being a text input ⇒ typing.
-      if (e) {
-        const path = (e.composedPath?.() || []) as EventTarget[];
-        for (const t of path) {
-          if (t instanceof HTMLElement) {
-            const tag = t.tagName;
-            if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return true;
-          }
-        }
-      }
-      const el = document.activeElement as HTMLElement | null;
-      if (el) {
-        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true;
-        if (el.isContentEditable) return true;
-      }
-      return false;
-    }
-
     function onKeyDown(e: KeyboardEvent) {
-      const k = e.key.toLowerCase();
-      const isControlKey = ["w", "a", "s", "d", "q", "e"].includes(k);
-      if (!isControlKey) return;
-
-      if (isTypingTarget(e)) {
-        // Chat is focused. Stop OUR handler AND mkkellogg's downstream
-        // keyboard handler from seeing this key, then re-emit it onto
-        // the input so the character actually appears in the chat box.
-        e.stopImmediatePropagation();
-        const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
-        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
-          // Native setters are needed so React's controlled input picks up the change.
-          const proto =
-            el.tagName === "TEXTAREA"
-              ? window.HTMLTextAreaElement.prototype
-              : window.HTMLInputElement.prototype;
-          const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-          const start = el.selectionStart ?? el.value.length;
-          const end = el.selectionEnd ?? el.value.length;
-          const next = el.value.slice(0, start) + e.key + el.value.slice(end);
-          setter?.call(el, next);
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.selectionStart = el.selectionEnd = start + e.key.length;
-        }
-        e.preventDefault();
+      // Hard rule: when chat input is focused, the camera ignores ALL
+      // keys until the input loses focus. The input itself receives the
+      // keystrokes as normal because we don't preventDefault here.
+      if (inputFocusedRef.current) {
+        keys.clear();
         return;
       }
-
-      keys.add(k);
-      e.preventDefault();
-      e.stopImmediatePropagation();
+      const k = e.key.toLowerCase();
+      if (["w", "a", "s", "d", "q", "e"].includes(k)) {
+        keys.add(k);
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
     }
     function onKeyUp(e: KeyboardEvent) {
-      // Always release keys on key-up so a key that started before focusing
-      // an input doesn't get stuck.
       keys.delete(e.key.toLowerCase());
     }
 
@@ -236,6 +199,15 @@ export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProp
       const v: any = viewerRef.current;
       const cam: THREE.Camera | undefined = v?.camera;
       if (!cam) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+
+      // Hard pause: chat input has focus → no camera updates at all.
+      // Also drop velocity so the camera stops dead instead of coasting.
+      if (inputFocusedRef.current) {
+        keys.clear();
+        vel.set(0, 0, 0);
         raf = requestAnimationFrame(tick);
         return;
       }

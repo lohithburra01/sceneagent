@@ -35,6 +35,7 @@ export default function ChatOverlay({ slug }: ChatOverlayProps) {
 
   const flyTo = useViewerStore((s) => s.flyTo);
   const setTour = useViewerStore((s) => s.setTour);
+  const setInputFocused = useViewerStore((s) => s.setInputFocused);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -165,6 +166,16 @@ export default function ChatOverlay({ slug }: ChatOverlayProps) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
+          onKeyDown={(e) => {
+            // Belt-and-suspenders: stop scene capture handlers from seeing
+            // the keystroke, even though inputFocused already disables them.
+            e.stopPropagation();
+            if (e.key === "Escape") {
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
           placeholder="Ask about this listing…"
           disabled={busy}
           className={clsx(
