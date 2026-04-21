@@ -14,7 +14,7 @@ the scene.
 ![open-clip](https://img.shields.io/badge/open--clip-ViT--B%2F32-1e40af)
 ![LangGraph](https://img.shields.io/badge/LangGraph-agent-34d399)
 ![MCP](https://img.shields.io/badge/MCP-Anthropic-8b5cf6)
-![Gemini Flash](https://img.shields.io/badge/Gemini-2.0%20Flash-4285f4?logo=google)
+![Qwen 3 on Groq](https://img.shields.io/badge/Agent%20LLM-Qwen%203%2032B%20%C2%B7%20Groq-4285f4)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-minikube-326ce5?logo=kubernetes)
 
 The demo scene is an interior wine bar, served as a 3DGS Gaussian splat with
@@ -121,12 +121,20 @@ logit `opacity`, log `scale_0..2`, and `rot_0..3` quaternion. From here
 on every consumer in the pipeline reads the same thing.
 
 ### 3. Camera-array placement (the "where do we look?" problem)
-Object-density driven: cluster the rough scene-occupancy points with
-k-means and place one camera per cluster, 2 m back at eye height, looking
-at the cluster centre. For interactive control we ship a Blender add-on
-(`Camera_array_tool/`) with prebuilt array shapes (HalfDome, Cylinder,
-InteriorTower, MinAngle17/26) — the user drags the array inside the splat
-in Blender and exports `camera_poses.json` in one click.
+Object-density driven by default: k-means over the scene-occupancy points
+gives N camera-array centres, each placed 2 m back at eye height looking
+at the cluster centre. For interactive control we ship a **Blender add-on**
+under `Camera_array_tool/` (extension of Olli Huttunen's *Camera Array
+Tool*) with prebuilt array shapes (HalfDome / Cylinder / InteriorTower /
+MinAngle17 / MinAngle26). The workflow:
+
+  1. Convert the splat to a colored point cloud
+     (`pipeline/src/ply_to_pointcloud.py`) so any vanilla Blender PLY
+     importer eats it.
+  2. Spawn a pre-made array object in Blender and drag/scale it inside
+     the splat where the user wants coverage.
+  3. **SceneAgent Export → "Export to SceneAgent (camera_poses.json)"** —
+     the addon writes a JSON file the rest of the pipeline picks up.
 
 ### 4. Photoreal view rendering
 `pipeline/src/render_gsplat.py` runs **gsplat's CUDA rasterizer** at the
@@ -177,22 +185,33 @@ hovered/selected object's bounding box on the splat in real time.
 What ships in the browser, beyond the pipeline:
 
 - **3D Gaussian-splat viewport** rendered in real time via
-  `@mkkellogg/gaussian-splats-3d`, with custom **Blender-style fly
+  `@mkkellogg/gaussian-splats-3d` with custom **Blender-style fly
   controls** — `W`/`S` forward, `A`/`D` strafe, `Q`/`E` world-up/down,
-  drag-to-look. Inputs in the chat box don't capture keys.
+  drag-to-look. The viewport completely freezes camera input the moment
+  any text input is focused (chat, filter), and resumes on blur or
+  `Esc` — so typing never accidentally moves the scene.
 - **Inventory sidebar** listing every detected object grouped by class,
-  with a class filter, per-row confidence chips, and an explicit fly-to
-  button that's separate from selection (so clicking a row highlights
-  the object without yanking the camera).
-- **Live bounding-box + label overlay** rendered as an SVG layer on top
-  of the WebGL canvas. Projects the 3D bbox each frame from the splat
-  viewer's camera, so the highlight stays locked to the object as you
-  move around.
-- **Agentic AI concierge** — a LangGraph agent inside the FastAPI
-  process exposes scene tools through MCP. The agent can move the
-  camera, find an object by free-text description, measure between two
-  points, list inventory by category, and plan guided tours. It does
-  not carry the scene in its context window — it queries the back end.
+  with a real-time **class filter**, per-row confidence chips, an
+  optional auto-fly toggle, and an explicit ✈ fly-to button on each
+  row. Clicking a row highlights without yanking the camera by default.
+- **Live bounding-box + label overlay** rendered as an SVG/HTML layer
+  over the WebGL canvas. The 12 edges of the active object's bbox plus
+  a `class · NN%` text chip are projected from 3D to 2D on every frame
+  using the viewer's camera matrix, so the highlight stays locked to
+  the object as you fly around. Hover / click in the sidebar drives it.
+- **Agentic AI concierge** — a LangGraph single-node agent inside the
+  FastAPI process exposes scene tools through MCP (`list_objects`,
+  `find_by_description`, `measure_distance`, `plan_tour`,
+  `render_view`, `describe_image`, …). The agent does not carry the
+  scene in its context — it queries the back end via tools.
+- **Pluggable LLM provider.** Three env vars (`LLM_API_KEY`,
+  `LLM_BASE_URL`, `LLM_MODEL`) point the agent at any
+  OpenAI-compatible endpoint — Groq, OpenRouter, DeepSeek, Moonshot,
+  Together AI, your own. Default config uses **Qwen 3 32B on Groq**
+  (truly free, no card). Falls back to Gemini if those env vars are
+  unset, then to a rule-based heuristic so the API surface always
+  responds. Reasoning-model preambles (`<think>...</think>`) are
+  stripped before JSON parsing.
 - **Chat surface** collapsed behind a small icon by default; opens as a
   slide-up sheet that doesn't cover the splat.
 
@@ -230,8 +249,8 @@ Other planned work:
 ## Quick start
 
 You need Docker + Docker Compose, a HuggingFace token (the demo splat
-sits behind one license accept), and a Google AI Studio API key for
-Gemini.
+and SAM 3 weights sit behind one license accept each), and a free Groq
+API key for the agent's LLM (or any OpenAI-compatible key).
 
 1. **Clone the repo.**
    ```bash
@@ -241,7 +260,11 @@ Gemini.
 2. **Configure environment.**
    ```bash
    cp .env.example .env
-   # edit .env: set GEMINI_API_KEY=... and HF_TOKEN=...
+   # edit .env:
+   #   HF_TOKEN=hf_...
+   #   LLM_API_KEY=gsk_...                     # from console.groq.com
+   #   LLM_BASE_URL=https://api.groq.com/openai/v1
+   #   LLM_MODEL=qwen/qwen3-32b
    ```
 3. **Download the demo scene.**
    ```bash
@@ -284,7 +307,7 @@ kubectl apply -f k8s/99-secrets.yaml
 - **Camera-array authoring:** Olli Huttunen's *Camera Array Tool* Blender add-on, extended with a SceneAgent JSON exporter.
 - **Agent framework:** [LangGraph](https://langchain-ai.github.io/langgraph/).
 - **Tool protocol:** Anthropic's [Model Context Protocol](https://modelcontextprotocol.io/).
-- **LLM / VLM:** [Gemini 2.0 Flash](https://ai.google.dev/gemini-api/docs/models/gemini).
+- **Agent LLM:** [Qwen 3 32B](https://huggingface.co/Qwen/Qwen3-32B) (Alibaba) hosted free on [Groq](https://groq.com/) — pluggable to any OpenAI-compatible endpoint via three env vars.
 - **Vector search:** [pgvector](https://github.com/pgvector/pgvector).
 
 ---
