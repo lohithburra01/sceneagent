@@ -78,8 +78,8 @@ https://github.com/user-attachments/assets/46024f01-cde6-4ab4-a413-8e08ec244e3c
         the CV      │                     │ image / text
         pipeline    │                     ▼
                     │          ┌──────────────────────┐
-          ┌─────────┴───────┐  │  Gemini 2.0 Flash    │
-          │ pipeline (CV)   │  │  (vision + text LLM) │
+          ┌─────────┴───────┐  │  Qwen 3 32B (Groq)   │
+          │ pipeline (CV)   │  │  pluggable, free     │
           │ splat ingest →  │  └──────────────────────┘
           │ render → SAM 3 →│
           │ 3D backproject  │
@@ -239,7 +239,7 @@ non-technical user can bring their own scene:
 
 Other planned work:
 
-- **Streaming chat.** SSE is wired; stream Gemini tokens through.
+- **Streaming chat.** SSE is wired; stream the agent's tokens through.
 - **Per-Gaussian instance IDs** (Gaussian Grouping–style) so the splat
   itself carries object identity instead of needing a sidecar
   inventory file.
@@ -288,7 +288,7 @@ The same stack runs on minikube with plain YAML — no Helm. See
 
 ```bash
 cp k8s/99-secrets.example.yaml k8s/99-secrets.yaml
-$EDITOR k8s/99-secrets.yaml            # paste GEMINI_API_KEY
+$EDITOR k8s/99-secrets.yaml            # paste LLM_API_KEY (+ HF_TOKEN)
 kubectl apply -f k8s/99-secrets.yaml
 ./k8s/apply.sh
 ```
