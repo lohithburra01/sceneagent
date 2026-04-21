@@ -96,5 +96,12 @@ def _wire_routers() -> None:
     except Exception as exc:  # pragma: no cover
         logger.warning("chat router not wired: %s", exc)
 
+    try:
+        from .routes.metrics import router as metrics_router
+
+        app.include_router(metrics_router)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("metrics router not wired: %s", exc)
+
 
 _wire_routers()

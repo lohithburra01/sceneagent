@@ -33,6 +33,21 @@ export interface Hotspot {
   note_text: string;
   category: string | null;
   class_name: string | null;
+  bbox_min?: Vec3 | null;
+  bbox_max?: Vec3 | null;
+  centroid?: Vec3 | null;
+}
+
+export interface SceneMetrics {
+  f1: number;
+  precision: number;
+  recall: number;
+  tp: number;
+  fp: number;
+  fn: number;
+  num_predicted: number;
+  num_ground_truth: number;
+  iou_threshold: number;
 }
 
 export interface ToolCall {
@@ -103,6 +118,12 @@ export function seedMatch(slug: string): Promise<{ matched: number }> {
   return request<{ matched: number }>(`/scenes/${slug}/notes/seed-match`, {
     method: "POST",
   });
+}
+
+export function getMetrics(slug: string): Promise<SceneMetrics | null> {
+  return request<SceneMetrics | null>(`/scenes/${slug}/metrics`).catch(
+    () => null
+  );
 }
 
 export function splatUrlFor(slug: string): string {

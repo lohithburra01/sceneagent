@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import clsx from "clsx";
-import { Send, Bot, User, Wrench } from "lucide-react";
+import { Send, Bot, User, Wrench, X } from "lucide-react";
 import { chat, ToolCall, Vec3 } from "@/lib/api";
 import { useViewerStore, TourStop } from "@/stores/viewer";
 
@@ -30,6 +30,7 @@ export default function ChatOverlay({ slug }: ChatOverlayProps) {
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const flyTo = useViewerStore((s) => s.flyTo);
@@ -95,21 +96,48 @@ export default function ChatOverlay({ slug }: ChatOverlayProps) {
     }
   }, [input, busy, slug, scrollToBottom, flyTo, setTour]);
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        aria-label="Open AI concierge"
+        onClick={() => setOpen(true)}
+        className={clsx(
+          "fixed bottom-6 right-[360px] z-30",
+          "h-11 w-11 rounded-full",
+          "bg-neutral-900/90 border border-neutral-700 backdrop-blur",
+          "flex items-center justify-center",
+          "hover:bg-neutral-800 transition-colors"
+        )}
+      >
+        <Bot className="w-4 h-4 text-amber-300" />
+      </button>
+    );
+  }
+
   return (
     <div
       className={clsx(
-        "fixed bottom-4 right-4 z-20",
-        "w-[384px] max-w-[calc(100vw-2rem)]",
+        "fixed bottom-4 right-[360px] z-30",
+        "w-[384px] max-w-[calc(100vw-380px)]",
         "h-[520px] max-h-[calc(100vh-2rem)]",
         "flex flex-col",
-        "rounded-2xl overflow-hidden",
-        "bg-neutral-900/95 text-neutral-100 backdrop-blur",
-        "border border-neutral-700 shadow-2xl"
+        "rounded-xl overflow-hidden",
+        "bg-neutral-950/95 text-neutral-100 backdrop-blur",
+        "border border-neutral-800 shadow-2xl"
       )}
     >
       <header className="px-4 py-3 border-b border-neutral-800 flex items-center gap-2">
-        <Bot className="w-4 h-4 text-emerald-400" />
-        <div className="text-sm font-semibold">AI Concierge</div>
+        <Bot className="w-4 h-4 text-amber-300" />
+        <div className="text-sm font-medium">Concierge</div>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Close"
+          className="ml-auto text-neutral-500 hover:text-neutral-200"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </header>
 
       <div

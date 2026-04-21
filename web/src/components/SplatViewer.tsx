@@ -6,6 +6,7 @@ import { useViewerStore, Vec3 } from "@/stores/viewer";
 
 interface SplatViewerProps {
   splatUrl: string;
+  onViewerReady?: (viewer: unknown) => void;
 }
 
 /**
@@ -17,7 +18,7 @@ interface SplatViewerProps {
  * Fallback: if the compressed .ply does not load, convert to .ksplat via
  * the @mkkellogg/gaussian-splats-3d CLI (see web/README.md).
  */
-export default function SplatViewer({ splatUrl }: SplatViewerProps) {
+export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<unknown | null>(null);
   const mountedRef = useRef(false);
@@ -56,6 +57,7 @@ export default function SplatViewer({ splatUrl }: SplatViewerProps) {
         });
 
         viewerRef.current = viewer;
+        onViewerReady?.(viewer);
 
         await viewer.addSplatScene(splatUrl, {
           showLoadingUI: true,
@@ -140,6 +142,92 @@ export default function SplatViewer({ splatUrl }: SplatViewerProps) {
       }
     };
   }, [flyToPosition]);
+
+  // Blender-style fly controls: W/S forward-back along view, A/D strafe,
+  // Q/E world-up/down. Captured before the viewer's built-in handler so
+  // mkkellogg's WASD doesn't interfere; skipped when focus is in a text
+  // input so chat typing doesn't move the camera.
+  useEffect(() => {
+    const keys = new Set<string>();
+    const SPEED = 3.0;
+    const DAMP = 10.0;
+    let raf = 0;
+    let last = performance.now();
+
+    function targetIsTextInput(t: EventTarget | null) {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable;
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (targetIsTextInput(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (["w", "a", "s", "d", "q", "e"].includes(k)) {
+        keys.add(k);
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      keys.delete(e.key.toLowerCase());
+    }
+
+    const vel = new THREE.Vector3();
+
+    function tick() {
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const v: any = viewerRef.current;
+      const cam: THREE.Camera | undefined = v?.camera;
+      if (!cam) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+
+      const forward = new THREE.Vector3();
+      cam.getWorldDirection(forward);
+      forward.normalize();
+      const worldUp = new THREE.Vector3(0, 0, 1);
+      const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+
+      const accel = new THREE.Vector3();
+      if (keys.has("w")) accel.add(forward);
+      if (keys.has("s")) accel.addScaledVector(forward, -1);
+      if (keys.has("d")) accel.add(right);
+      if (keys.has("a")) accel.addScaledVector(right, -1);
+      if (keys.has("e")) accel.add(worldUp);
+      if (keys.has("q")) accel.addScaledVector(worldUp, -1);
+
+      if (accel.lengthSq() > 0) accel.normalize().multiplyScalar(SPEED);
+
+      vel.lerp(accel, Math.min(1, DAMP * dt));
+      cam.position.addScaledVector(vel, dt);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const controls: any = v?.controls;
+      if (controls?.target?.copy) {
+        const look = cam.position.clone().add(forward);
+        controls.target.copy(look);
+        if (controls.update) controls.update();
+      }
+
+      raf = requestAnimationFrame(tick);
+    }
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("keyup", onKeyUp, { capture: true });
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true } as EventListenerOptions);
+      window.removeEventListener("keyup", onKeyUp, { capture: true } as EventListenerOptions);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
 
   return (
     <div
