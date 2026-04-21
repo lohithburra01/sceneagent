@@ -198,6 +198,79 @@ def _heuristic_plan(state: AgentState) -> dict[str, Any]:
     return {"tool": "answer", "args": {"text": text}}
 
 
+def _build_transcript(state: AgentState) -> str:
+    parts: list[str] = [
+        f"Scene slug: {state.scene_slug}",
+        f"User: {state.user_message}",
+    ]
+    for i, call in enumerate(state.tool_calls):
+        obs = call.get("observation")
+        if isinstance(obs, dict) and "image_base64" in obs:
+            obs = {**obs, "image_base64": "<base64 elided>"}
+        obs_str = json.dumps(obs)[:4000]
+        parts.append(
+            f"Turn {i+1}: tool={call.get('tool')} args={json.dumps(call.get('args'))} "
+            f"→ {obs_str}"
+        )
+    parts.append(
+        "Respond now. Output exactly one JSON object: "
+        '{"tool": "<name>", "args": {...}}.'
+    )
+    return "\n".join(parts)
+
+
+def _normalize_plan(plan: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if not plan or "tool" not in plan:
+        return None
+    plan.setdefault("args", {})
+    if not isinstance(plan["args"], dict):
+        plan["args"] = {}
+    return plan
+
+
+def _openai_compat_plan(state: AgentState) -> Optional[dict[str, Any]]:
+    """Plan via any OpenAI-compatible API (DeepSeek, Kimi, Qwen, GLM, ...).
+
+    Configured via env:
+      LLM_API_KEY   — provider's API key
+      LLM_BASE_URL  — provider's /v1 base URL  (e.g. https://api.deepseek.com)
+      LLM_MODEL     — model name               (e.g. deepseek-chat)
+
+    Returns None if any of those are missing or the provider is unreachable;
+    the caller will then fall back to Gemini → heuristic.
+    """
+    api_key = os.environ.get("LLM_API_KEY")
+    base_url = os.environ.get("LLM_BASE_URL")
+    model_name = os.environ.get("LLM_MODEL")
+    if not (api_key and base_url and model_name):
+        return None
+    try:
+        from openai import OpenAI
+    except Exception as exc:  # pragma: no cover
+        logger.warning("openai import failed: %s", exc)
+        return None
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=30.0)
+        resp = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": _build_transcript(state)},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        plan = _normalize_plan(_extract_json_object(raw))
+        if plan is None:
+            logger.warning("LLM (%s) plan missing 'tool': %r", model_name, raw[:200])
+        return plan
+    except Exception as exc:
+        logger.warning("LLM (%s @ %s) plan failed: %s", model_name, base_url, exc)
+        return None
+
+
 def _gemini_plan(state: AgentState) -> Optional[dict[str, Any]]:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -211,38 +284,17 @@ def _gemini_plan(state: AgentState) -> Optional[dict[str, Any]]:
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(_MODEL_NAME, system_instruction=SYSTEM_PROMPT)
-        # Build transcript — summarize tool outputs so we don't blow context.
-        parts: list[str] = [f"Scene slug: {state.scene_slug}", f"User: {state.user_message}"]
-        for i, call in enumerate(state.tool_calls):
-            obs = call.get("observation")
-            # Truncate base64 PNGs so they don't flood the context window.
-            if isinstance(obs, dict) and "image_base64" in obs:
-                obs = {**obs, "image_base64": "<base64 elided>"}
-            obs_str = json.dumps(obs)[:4000]
-            parts.append(
-                f"Turn {i+1}: tool={call.get('tool')} args={json.dumps(call.get('args'))} "
-                f"→ {obs_str}"
-            )
-        parts.append(
-            "Respond now. Output exactly one JSON object: "
-            '{"tool": "<name>", "args": {...}}.'
-        )
-        prompt = "\n".join(parts)
         response = model.generate_content(
-            prompt,
+            _build_transcript(state),
             generation_config={
                 "temperature": 0.2,
                 "response_mime_type": "application/json",
             },
         )
         raw = (getattr(response, "text", "") or "").strip()
-        plan = _extract_json_object(raw)
-        if not plan or "tool" not in plan:
-            logger.warning("Gemini plan missing 'tool': %r", raw)
-            return None
-        plan.setdefault("args", {})
-        if not isinstance(plan["args"], dict):
-            plan["args"] = {}
+        plan = _normalize_plan(_extract_json_object(raw))
+        if plan is None:
+            logger.warning("Gemini plan missing 'tool': %r", raw[:200])
         return plan
     except Exception as exc:
         logger.warning("Gemini plan failed: %s", exc)
@@ -260,7 +312,14 @@ async def run_agent(scene_slug: str, user_message: str) -> dict[str, Any]:
 
     for _ in range(MAX_ITERATIONS):
         state.iterations += 1
-        plan = _gemini_plan(state) or _heuristic_plan(state)
+        # Provider preference: any OpenAI-compatible (DeepSeek/Kimi/Qwen/GLM)
+        # if its env vars are set, otherwise Gemini, otherwise the rule-based
+        # heuristic (so the API surface always returns something).
+        plan = (
+            _openai_compat_plan(state)
+            or _gemini_plan(state)
+            or _heuristic_plan(state)
+        )
         tool = str(plan.get("tool") or "answer")
         args = plan.get("args") or {}
 

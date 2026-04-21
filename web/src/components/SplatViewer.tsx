@@ -165,26 +165,59 @@ export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProp
     let raf = 0;
     let last = performance.now();
 
-    function isTypingTarget(): boolean {
-      // document.activeElement is the truly-focused element. e.target
-      // can be the document/body in capture phase if focus didn't move,
-      // and we can't reliably distinguish "user clicked into chat" from
-      // that.
+    function isTypingTarget(e?: KeyboardEvent): boolean {
+      // Check both: composedPath (fires through shadow DOM, gives us the
+      // actual click target chain) AND document.activeElement (the
+      // currently-focused element). Either being a text input ⇒ typing.
+      if (e) {
+        const path = (e.composedPath?.() || []) as EventTarget[];
+        for (const t of path) {
+          if (t instanceof HTMLElement) {
+            const tag = t.tagName;
+            if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return true;
+          }
+        }
+      }
       const el = document.activeElement as HTMLElement | null;
-      if (!el) return false;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true;
-      if (el.isContentEditable) return true;
+      if (el) {
+        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true;
+        if (el.isContentEditable) return true;
+      }
       return false;
     }
 
     function onKeyDown(e: KeyboardEvent) {
-      if (isTypingTarget()) return;
       const k = e.key.toLowerCase();
-      if (["w", "a", "s", "d", "q", "e"].includes(k)) {
-        keys.add(k);
-        e.preventDefault();
+      const isControlKey = ["w", "a", "s", "d", "q", "e"].includes(k);
+      if (!isControlKey) return;
+
+      if (isTypingTarget(e)) {
+        // Chat is focused. Stop OUR handler AND mkkellogg's downstream
+        // keyboard handler from seeing this key, then re-emit it onto
+        // the input so the character actually appears in the chat box.
         e.stopImmediatePropagation();
+        const el = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
+        if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
+          // Native setters are needed so React's controlled input picks up the change.
+          const proto =
+            el.tagName === "TEXTAREA"
+              ? window.HTMLTextAreaElement.prototype
+              : window.HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+          const start = el.selectionStart ?? el.value.length;
+          const end = el.selectionEnd ?? el.value.length;
+          const next = el.value.slice(0, start) + e.key + el.value.slice(end);
+          setter?.call(el, next);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.selectionStart = el.selectionEnd = start + e.key.length;
+        }
+        e.preventDefault();
+        return;
       }
+
+      keys.add(k);
+      e.preventDefault();
+      e.stopImmediatePropagation();
     }
     function onKeyUp(e: KeyboardEvent) {
       // Always release keys on key-up so a key that started before focusing
