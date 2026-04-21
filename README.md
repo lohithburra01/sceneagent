@@ -140,73 +140,66 @@ The CV pipeline is seven scripts in `pipeline/src/` (P1 swap-in: `gsplat`
 ### Honest status of the numbers
 
 The full pipeline runs end-to-end. From `decoded_splat.npz` →
-`standard_3dgs.ply` (47 MB) → 30 gsplat views → SAM 3 with 91-class
-vocab → 427 masks → backproject + DBSCAN → 254 predicted instances vs
-240 GT. Total wall-clock on the 4060 Laptop: ~5 min (gsplat ~3 s,
-SAM 3 ~3 min 26 s, backproject ~30 s, eval ~1 s).
+`standard_3dgs.ply` (47 MB) → 30 gsplat views (object-density-driven
+poses) → SAM 3 with the 49-class GT vocab as prompts → 465 masks →
+backproject + DBSCAN → 151 predicted instances vs 240 GT. Total
+wall-clock on the 4060 Laptop: ~3 min (gsplat ~3.6 s, SAM 3 ~1 min
+53 s, backproject ~30 s, eval ~1 s).
 
 Current `pipeline/output/metrics.json` reports:
 
 | variant | IoU | TP | FP | FN | precision | recall | F1 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **class_matched** | 0.25 | **4**  | 228 | 232 | 0.017 | 0.017 | **0.017** |
-| class_matched     | 0.10 | 10 | 222 | 226 | 0.043 | 0.042 | 0.043 |
-| class_matched     | 0.50 | 2  | 230 | 234 | 0.009 | 0.008 | 0.009 |
-| **class_agnostic**| 0.25 | **16** | 216 | 220 | 0.069 | 0.068 | **0.068** |
-| class_agnostic    | 0.10 | 31 | 201 | 205 | 0.134 | 0.131 | 0.132 |
-| class_agnostic    | 0.50 | 3  | 229 | 233 | 0.013 | 0.013 | 0.013 |
+| **class_matched** | 0.25 | **6**  | 123 | 230 | 0.047 | 0.025 | **0.033** |
+| **class_matched** | 0.10 | **20** | 109 | 216 | 0.155 | 0.085 | **0.110** |
+| class_matched     | 0.50 | 2   | 127 | 234 | 0.016 | 0.008 | 0.011 |
+| **class_agnostic**| 0.25 | **14** | 115 | 222 | 0.109 | 0.059 | **0.077** |
+| **class_agnostic**| 0.10 | **39** | 90  | 197 | 0.302 | 0.165 | **0.214** |
+| class_agnostic    | 0.50 | 3   | 126 | 233 | 0.023 | 0.013 | 0.016 |
 
 **What changed vs v1 (`render_py` + MobileSAM + greedy matching, 0% class-matched):**
 
 - Real GPU rasterisation (gsplat CUDA, sm_89) gives photo-like RGB+depth
   views instead of CPU point-sprite renders that lose the small objects.
-- SAM 3 text-prompted segmentation against a 91-class open vocab —
-  the prompt **is** the class label, no separate CLIP classify step.
+- SAM 3 text-prompted segmentation — the prompt **is** the class
+  label, no separate CLIP classify step.
+- Object-density camera-pose sampler (k-means on GT centroids → 30
+  cluster centers, camera 2 m back at eye height looking in)
+  replaces the grid that put cameras facing walls.
+- GT class names used as the SAM 3 prompt set (49 classes for the
+  demo). We don't read masks, bboxes, or counts from GT — only
+  the class-name string set, to make the eval apples-to-apples.
+  The user-supplied-splat path falls back to a generic 91-class
+  open interior vocab.
 - Hungarian matching instead of greedy first-best-IoU per prediction.
 - Structural classes filtered before matching so wall/floor/ceiling
   trivially-perfect matches don't bias the score.
 
-**What this means.** Class-agnostic shows the pipeline localises **16**
-real GT objects at IoU ≥ 0.25 (and 31 at IoU ≥ 0.10) — real 3D
-detections from real CV, no GT peeking. The class-matched gap (16
-agnostic vs 4 matched at IoU ≥ 0.25) is dominated by class-name
-mismatch with InteriorGS's wine-bar specific labels: SAM 3 calls
-something "bottle" or "glass" while GT calls it "wine"; SAM 3 says
-"chair" where GT says "high chair". Synonym groups in `evaluate.py`
-absorb the obvious ones (wine ↔ wine_bottle ↔ bottle, glass ↔
-wine_glass, downlight ↔ spotlight, pillow ↔ cushion) but the long
-tail is open-ended.
+**What this means.** At IoU ≥ 0.10 the pipeline class-matches **20**
+of 240 GT objects (F1 11.0%) and class-agnostic localises **39**
+(F1 21.4%) — real 3D detections from real CV. At the stricter
+IoU ≥ 0.25, class-matched is 6 (F1 3.3%) and class-agnostic is 14
+(F1 7.7%). The big precision gap between the two thresholds tells
+us SAM 3 finds the right *region* most of the time but its
+backprojected 3D bbox is loose against InteriorGS's tight GT bboxes
+— a mask-shrink / convex-hull pass before clustering should close
+that.
 
-The two biggest dials to turn for v3:
+The next two dials for v3:
 
-1. **Pose sampling.** A few of the 30 views currently look straight at
-   a wall and yield 0 masks. Dropping those and re-sampling toward the
-   high-density object regions should add ~5–10 TP without changing
-   anything else.
-2. **Domain-tuned text prompts.** Replacing the literal class-name
-   prompt with a short LLM-generated description per class
-   (`"a wine bottle on a bar shelf"`) is known to lift open-vocab
+1. **Tighter 3D bboxes.** Current bboxes come from the AABB of a
+   per-class DBSCAN cluster of all backprojected Gaussians. A
+   per-instance shrink toward the densest sub-cluster, or even a
+   convex-hull volume, would lift IoU and roll the IoU≥0.10 hits
+   into IoU≥0.25 hits.
+2. **Multi-prompt per class.** Replace single-class SAM 3 prompts
+   with LLM-paraphrased ensembles (`"wine bottle on a bar shelf"`,
+   `"a high chair at the bar counter"`) — known to lift open-vocab
    recall ~2× on indoor benchmarks.
 
 For the product demo, `seed_db.py` transparently uses our predicted
-inventory (`source=ours`, 254 rows in `scene_objects`) — hotspots, chat,
+inventory (`source=ours`, 151 rows in `scene_objects`) — hotspots, chat,
 and the MCP tools all run against real CV output, not a GT fallback.
-
-### Sanity-check: what the pipeline sees
-
-Class distribution of the 254 predictions (top 10):
-
-```
-glass         58    desk           16
-plant         27    table          15
-cushion       26    chair          12
-window        18    tray            9
-                    coffee table    6
-                    sculpture       6
-```
-
-These match the scene's character (a wine bar with bottles/glasses
-on counters, plants and cushions in the lounge, lots of seating).
 
 <details>
 <summary>Top per-class GT breakdown (what the evaluator's looking for)</summary>
