@@ -19,3 +19,6 @@ _hf_cache/
 pipeline/output/*
 !pipeline/output/metrics.json
 !pipeline/output/object_inventory.json
+
+# local docker compose override (dev-only)
+docker-compose.override.yml
