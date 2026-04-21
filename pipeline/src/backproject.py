@@ -99,12 +99,30 @@ NOISE_CLASSES = {"shower", "bathtub", "toilet", "washing_machine", "dryer",
 MIN_CLIP_CONFIDENCE = 0.24   # filter CLIP predictions below this (very weak signal)
 
 
+def _mask_path_for(i: int) -> Path:
+    """Match the new renderer's 2-digit stem, fall back to the old 3-digit."""
+    a = MASKS_DIR / f"view_{i:02d}.json"
+    if a.exists():
+        return a
+    return MASKS_DIR / f"view_{i:03d}.json"
+
+
+def _load_vocab() -> list[str]:
+    """Prefer the new open INTERIOR_VOCAB; fall back to the legacy HOME_CLASSES."""
+    try:
+        from pipeline.src.vocab_interior import INTERIOR_VOCAB
+        return INTERIOR_VOCAB
+    except Exception:
+        from pipeline.src.segment import HOME_CLASSES as _HC
+        return list(_HC)
+
+
 def vote_class_per_gaussian(centers: np.ndarray):
     intrinsics = json.loads((VIEWS_DIR / "_intrinsics.json").read_text())
     W, H = intrinsics["width"], intrinsics["height"]
     FOV_V = intrinsics["fov_vertical_deg"]
 
-    from pipeline.src.segment import HOME_CLASSES
+    HOME_CLASSES = _load_vocab()
     K = len(HOME_CLASSES)
     N = centers.shape[0]
     class_scores = np.zeros((N, K), dtype=np.float32)
@@ -112,7 +130,7 @@ def vote_class_per_gaussian(centers: np.ndarray):
     # First pass: collect all mask areas to compute a median for normalisation.
     all_areas = []
     for i, pose in enumerate(intrinsics["poses"]):
-        mp = MASKS_DIR / f"view_{i:03d}.json"
+        mp = _mask_path_for(i)
         if not mp.exists():
             continue
         for m in json.loads(mp.read_text()):
@@ -126,7 +144,7 @@ def vote_class_per_gaussian(centers: np.ndarray):
     print(f"median mask area: {median_area:.0f} px (over {len(all_areas)} masks)")
 
     for i, pose in enumerate(intrinsics["poses"]):
-        mask_path = MASKS_DIR / f"view_{i:03d}.json"
+        mask_path = _mask_path_for(i)
         if not mask_path.exists():
             continue
         masks = json.loads(mask_path.read_text())
@@ -175,7 +193,7 @@ def vote_class_per_gaussian(centers: np.ndarray):
 def cluster_instances(centers, class_idx, has_votes):
     """DBSCAN per class, tighter params matched to the typical GT object size
     (~0.3m). Skip structural + noise classes."""
-    from pipeline.src.segment import HOME_CLASSES
+    HOME_CLASSES = _load_vocab()
     instance_ids = np.full(len(centers), -1, dtype=np.int32)
     next_iid = 0
     for cls in np.unique(class_idx):
@@ -196,7 +214,7 @@ def cluster_instances(centers, class_idx, has_votes):
 
 
 def instances_to_inventory(centers, class_idx, instance_ids):
-    from pipeline.src.segment import HOME_CLASSES
+    HOME_CLASSES = _load_vocab()
     out = []
     for iid in np.unique(instance_ids):
         if iid < 0:
