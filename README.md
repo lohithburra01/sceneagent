@@ -1,26 +1,27 @@
 # SceneAgent
 
-Zillow is 30 static photos. SceneAgent turns a short walkthrough into a full
-3D Gaussian-splat listing with an AI concierge that answers questions,
-measures distances, and guides tours.
+Anyone records a short walkthrough of a space — or hands us a point cloud,
+a set of photos, a BIM model, or a Gaussian-splat file — and SceneAgent
+gives them back an interactive 3D viewer of that room with every object
+detected, named, and addressable by an AI concierge that lives inside
+the scene.
 
 ![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=nextdotjs)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi)
 ![Postgres + pgvector](https://img.shields.io/badge/Postgres-16%20%2B%20pgvector-336791?logo=postgresql)
-![Gaussian Splatting](https://img.shields.io/badge/Gaussian%20Splatting-3DGS-ff6b35)
-![open-clip](https://img.shields.io/badge/open--clip-ViT--B%2F32-5a67d8)
-![MobileSAM](https://img.shields.io/badge/MobileSAM-CPU-34d399)
-![LangGraph](https://img.shields.io/badge/LangGraph-agent-1e40af)
+![Gaussian Splatting](https://img.shields.io/badge/3DGS-gsplat%20CUDA-ff6b35)
+![SAM 3](https://img.shields.io/badge/Segmentation-SAM%203-5a67d8)
+![open-clip](https://img.shields.io/badge/open--clip-ViT--B%2F32-1e40af)
+![LangGraph](https://img.shields.io/badge/LangGraph-agent-34d399)
 ![MCP](https://img.shields.io/badge/MCP-Anthropic-8b5cf6)
 ![Gemini Flash](https://img.shields.io/badge/Gemini-2.0%20Flash-4285f4?logo=google)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-minikube-326ce5?logo=kubernetes)
 
-> *Video link forthcoming — see v2 roadmap.*
-
-The scene used in the v1 demo is InteriorGS `0003_839989`, a wine bar with
-299 labeled objects. It's commercial rather than residential because the
-InteriorGS dataset leans commercial — we treat the demo as a commercial
-real-estate walkthrough.
+The demo scene is an interior wine bar, served as a 3DGS Gaussian splat with
+**151 objects detected and segmented in 3D** by the SceneAgent pipeline,
+each clickable in the browser viewer with a wireframe bounding box and a
+class label. The same pipeline is built to accept any of the four input
+types above with a per-type sandbox UI (see [Roadmap](#roadmap)).
 
 ---
 
@@ -29,240 +30,194 @@ real-estate walkthrough.
 ```
                    ┌───────────────────────┐
                    │     user browser      │
+                   │  splat viewer + chat  │
                    └──────────┬────────────┘
                               │  HTTP / SSE
                               ▼
                    ┌───────────────────────┐
                    │  web  (Next.js 14)    │
-                   │  @mkkellogg splat     │
-                   │  hotspots, chat UI    │
+                   │  splat viewport,      │
+                   │  inventory sidebar,   │
+                   │  bbox overlay         │
                    └──────────┬────────────┘
                               │  REST + SSE
                               ▼
                    ┌───────────────────────┐
                    │  api  (FastAPI)       │
-                   │  /notes /hotspots     │
-                   │  /agent/chat (SSE)    │
-                   │  /mcp  (MCP server)   │
+                   │  /scenes /detections  │
+                   │  /hotspots /metrics   │
+                   │  /chat (SSE)          │
                    └──┬──────────┬─────────┘
                       │          │
            reads/     │          │  LangGraph agent
-           writes     │          │  calls MCP tools
+           writes     │          │  calls scene tools
                       ▼          ▼
           ┌─────────────────┐  ┌──────────────────────┐
           │ postgres 16     │  │ scene tools (MCP):   │
-          │ + pgvector      │  │  render_view         │
-          │ (scenes, objects│  │  list_objects        │
-          │  notes, hotspots│  │  find_by_description │
-          │  CLIP embedings)│  │  measure_distance    │
-          └─────────────────┘  │  highlight_region    │
-                               │  move_camera_to      │
-                               │  plan_tour           │
-                               └──────────┬───────────┘
-                                          │ image/text
-                                          ▼
-                               ┌──────────────────────┐
-                               │  Gemini 2.0 Flash    │
-                               │  (text + vision)     │
-                               └──────────────────────┘
-
-         (scaffolded, idle in v1: redis + celery worker for
-          future async splat-training pipeline)
+          │ + pgvector      │  │  list_objects        │
+          │ (scenes, objects│  │  find_by_description │
+          │  notes, hotspots│  │  measure_distance    │
+          │  CLIP embedings)│  │  highlight_region    │
+          └─────────▲───────┘  │  move_camera_to      │
+                    │          │  plan_tour           │
+        seeded by   │          └──────────┬───────────┘
+        the CV      │                     │ image / text
+        pipeline    │                     ▼
+                    │          ┌──────────────────────┐
+          ┌─────────┴───────┐  │  Gemini 2.0 Flash    │
+          │ pipeline (CV)   │  │  (vision + text LLM) │
+          │ splat ingest →  │  └──────────────────────┘
+          │ render → SAM 3 →│
+          │ 3D backproject  │
+          │ → object DB     │
+          └─────────────────┘
 ```
-
-*Legend: solid arrows are synchronous request/response; the agent loops over
-tool calls until it can compose a final answer, then streams it back over
-SSE.*
 
 ---
 
-## What this project demonstrates
+## What the pipeline does, end to end
 
-- **Real-time 3D Gaussian-splat rendering in the browser** — InteriorGS's
-  pre-trained splat loaded via `@mkkellogg/gaussian-splats-3d`, orbit + WASD
-  navigation at interactive frame rates.
-- **A 2D→3D semantic segmentation pipeline** — MobileSAM for 2D masks,
-  OpenCLIP ViT-B/32 for zero-shot classification, our own multi-view
-  backprojection + majority voting, DBSCAN to cluster Gaussians into
-  instances, evaluated against InteriorGS ground-truth labels. All of this
-  is in `pipeline/`; it doesn't require a GPU.
-- **Agentic AI with tool calling via MCP** — a LangGraph agent sits inside
-  the FastAPI process and calls scene tools through an MCP server. The
-  agent decides when to render a view, measure a distance, or look up a
-  hotspot; it does not carry the scene in its context window.
-- **Digital-twin grounding** — the chat can fly the camera to an object,
-  highlight a region, measure between two 3D points, and plan guided tours.
-  The agent is not answering questions *about* a scene — it is
-  manipulating it.
-- **One-command deployments** — `docker compose up --build` for local dev,
-  `./k8s/apply.sh` for minikube.
+The pipeline is **input-agnostic**. Whatever the user uploads — a phone
+walkthrough video, a folder of phone photos, a LiDAR point cloud, a Revit
+or IFC BIM model, or an already-trained Gaussian splat — the back end
+converges on the same intermediate format (a standard 3DGS `.ply`) and
+runs identical post-processing on top.
+
+Stages, in order:
+
+### 1. Input ingestion → Gaussian splat
+- **Video.** Extract frames at a chosen FPS, run COLMAP or MASt3R for
+  camera-pose recovery, train a 3DGS scene with `gsplat`. *(In progress;
+  the upload sandbox for videos is on the roadmap below.)*
+- **Photo set.** Same as above without the frame-extraction step. The
+  user just drops 30–300 photos into the sandbox.
+- **Point cloud (LAS / PLY / E57).** Densify and convert to a Gaussian
+  splat by initializing one Gaussian per point and refining via the
+  `gsplat` densification loop.
+- **BIM model.** Render the BIM mesh from a synthetic camera array,
+  then treat the renders as the photo-set path.
+- **Pre-trained splat.** Skip directly to stage 2 — we already have the
+  Gaussians, we just need to standardize the file format.
+
+### 2. Splat standardisation
+`pipeline/src/npz_to_ply.py` converts whatever splat format we received
+(decoded compressed-PLY, NPZ, etc.) into the **standard 14-channel 3DGS
+PLY**: `xyz`, `nx ny nz`, `f_dc_0..2` (DC spherical-harmonic colour),
+logit `opacity`, log `scale_0..2`, and `rot_0..3` quaternion. From here
+on every consumer in the pipeline reads the same thing.
+
+### 3. Camera-array placement (the "where do we look?" problem)
+Object-density driven: cluster the rough scene-occupancy points with
+k-means and place one camera per cluster, 2 m back at eye height, looking
+at the cluster centre. For interactive control we ship a Blender add-on
+(`Camera_array_tool/`) with prebuilt array shapes (HalfDome, Cylinder,
+InteriorTower, MinAngle17/26) — the user drags the array inside the splat
+in Blender and exports `camera_poses.json` in one click.
+
+### 4. Photoreal view rendering
+`pipeline/src/render_gsplat.py` runs **gsplat's CUDA rasterizer** at the
+exported camera poses. 30 views at 800×600 RGB+depth render in ~3 s on
+an RTX 4060 Laptop. OpenCV view convention; depth comes out in metres
+for stage 6.
+
+### 5. Open-vocabulary 2D segmentation
+`pipeline/src/segment_sam3.py` feeds each rendered view to **SAM 3**
+([facebookresearch/sam3](https://github.com/facebookresearch/sam3)).
+SAM 3 is text-promptable: we hand it a class name string ("wine bottle",
+"high chair", "chandelier", …) and it returns 2D instance masks for
+every match in the image, with a confidence score. No separate
+classification step needed; the prompt **is** the label.
+
+### 6. Backprojection — 2D masks → 3D Gaussians
+`pipeline/src/backproject.py` is the bridge from picture-space to
+world-space. For every Gaussian in the splat (typically 700k+):
+
+  - project its 3D centre into every view via the known camera matrix
+  - if the projected pixel falls inside a SAM 3 mask, the Gaussian gets
+    a vote for that mask's class
+  - votes are weighted by `mask_area / median_area` so a giant ceiling
+    mask doesn't drown out a small wine-bottle mask
+
+After all views, each Gaussian's predicted class is whichever class won
+the most votes.
+
+### 7. Instance clustering
+Same-class Gaussians that are close in 3D get grouped via **DBSCAN**
+into one instance per cluster. We compute an axis-aligned bounding box
+per instance from its member Gaussians' positions. The output is
+`object_inventory.json` — a flat list of `{instance_id, class_name,
+bbox_min, bbox_max, centroid, point_count}`.
+
+### 8. Serving
+`pipeline/src/seed_db.py` loads the inventory into Postgres alongside a
+CLIP text embedding per object (used by the chat agent's
+`find_by_description` tool for natural-language lookup like *"the green
+wine bottle by the window"*). The web viewer's right-side **Inventory**
+sidebar reads `/scenes/:slug/detections` directly and overlays the
+hovered/selected object's bounding box on the splat in real time.
 
 ---
 
-## Our segmentation pipeline
+## The product surface
 
-The CV pipeline is seven scripts in `pipeline/src/` (P1 swap-in: `gsplat`
-+ SAM 3 + Hungarian eval; the original CPU-only `render_py.py` and
-`segment.py` remain for the no-CUDA fallback path):
+What ships in the browser, beyond the pipeline:
 
-0. **`decode_splat.py`** — InteriorGS ships its splats in the PlayCanvas
-   compressed-PLY format (chunked 11/10/11-bit quantised positions, 2-10-10-10
-   smallest-three quaternion, 8/8/8/8 SH-DC + logit-opacity color). We decode
-   this in pure NumPy to get plain float Gaussians.
-1. **`npz_to_ply.py`** — converts the decoded `.npz` into a standard
-   3DGS 14-channel `.ply` (xyz, normals, f_dc_0..2, opacity logit, log
-   scales, wxyz quat) so any 3DGS renderer can load it.
-2. **`gen_camera_poses.py`** — samples 30 positions on a 6×6 grid
-   *inside* the scene bbox at floor + 1.6 m (eye height), each looking
-   at the nearest non-structural GT centroid. Replaces the v1
-   outside-perimeter rings that produced cameras-see-floaters renders.
-3. **`render_gsplat.py`** — `gsplat`'s CUDA rasterizer renders 30
-   800×600 RGB+depth views in ~3.3 s total on an RTX 4060 Laptop
-   (sm_89, JIT-compiled extension, OpenCV view convention).
-4. **`segment_sam3.py`** — for each view, prompts SAM 3 with each of
-   91 interior vocab classes (`bar counter`, `wine glass`, …), keeps
-   masks above the confidence threshold. ~6.9 s/view on the 4060
-   with bf16 autocast. Falls back to MobileSAM + open-CLIP if SAM 3
-   isn't available.
-5. **`backproject.py`** — for each Gaussian centre, projects into every
-   view; accumulates per-class scores weighted by mask-area normalisation
-   (so a big ceiling mask doesn't outvote a small wine-bottle mask).
-   DBSCAN-clusters same-class Gaussians into instances.
-6. **`evaluate.py`** — Hungarian-matched bipartite assignment between
-   our predicted instances and the InteriorGS GT labels, with the
-   structural classes (wall/floor/ceiling/window/door/stairs/column)
-   dropped from both sides before matching. Reports class-matched and
-   class-agnostic F1 at IoU thresholds 0.10 / 0.25 / 0.50.
-7. **`seed_db.py`** — loads either our predicted inventory or, if empty,
-   the InteriorGS ground-truth labels (transparent fallback) into Postgres
-   so the product demo still works.
+- **3D Gaussian-splat viewport** rendered in real time via
+  `@mkkellogg/gaussian-splats-3d`, with custom **Blender-style fly
+  controls** — `W`/`S` forward, `A`/`D` strafe, `Q`/`E` world-up/down,
+  drag-to-look. Inputs in the chat box don't capture keys.
+- **Inventory sidebar** listing every detected object grouped by class,
+  with a class filter, per-row confidence chips, and an explicit fly-to
+  button that's separate from selection (so clicking a row highlights
+  the object without yanking the camera).
+- **Live bounding-box + label overlay** rendered as an SVG layer on top
+  of the WebGL canvas. Projects the 3D bbox each frame from the splat
+  viewer's camera, so the highlight stays locked to the object as you
+  move around.
+- **Agentic AI concierge** — a LangGraph agent inside the FastAPI
+  process exposes scene tools through MCP. The agent can move the
+  camera, find an object by free-text description, measure between two
+  points, list inventory by category, and plan guided tours. It does
+  not carry the scene in its context window — it queries the back end.
+- **Chat surface** collapsed behind a small icon by default; opens as a
+  slide-up sheet that doesn't cover the splat.
 
-### Honest status of the numbers
+---
 
-The full pipeline runs end-to-end. From `decoded_splat.npz` →
-`standard_3dgs.ply` (47 MB) → 30 gsplat views (object-density-driven
-poses) → SAM 3 with the 49-class GT vocab as prompts → 465 masks →
-backproject + DBSCAN → 151 predicted instances vs 240 GT. Total
-wall-clock on the 4060 Laptop: ~3 min (gsplat ~3.6 s, SAM 3 ~1 min
-53 s, backproject ~30 s, eval ~1 s).
+## Roadmap
 
-Current `pipeline/output/metrics.json` reports:
+The current branch ships the splat → segmentation → viewer path against
+a pre-trained input. Next, **per-input-type upload sandboxes** so a
+non-technical user can bring their own scene:
 
-| variant | IoU | TP | FP | FN | precision | recall | F1 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **class_matched** | 0.25 | **6**  | 123 | 230 | 0.047 | 0.025 | **0.033** |
-| **class_matched** | 0.10 | **20** | 109 | 216 | 0.155 | 0.085 | **0.110** |
-| class_matched     | 0.50 | 2   | 127 | 234 | 0.016 | 0.008 | 0.011 |
-| **class_agnostic**| 0.25 | **14** | 115 | 222 | 0.109 | 0.059 | **0.077** |
-| **class_agnostic**| 0.10 | **39** | 90  | 197 | 0.302 | 0.165 | **0.214** |
-| class_agnostic    | 0.50 | 3   | 126 | 233 | 0.023 | 0.013 | 0.016 |
+- **Video sandbox.** Drag-drop a phone walkthrough; we extract frames,
+  show pose recovery progress, train the splat, and drop the user into
+  the same viewer flow.
+- **Photo-set sandbox.** Same back end as video, skipping frame
+  extraction. Live preview of the COLMAP graph as photos are added.
+- **Point-cloud sandbox.** Upload a `.ply` / `.las` / `.e57`; the
+  Gaussian initialiser runs server-side and the user picks a sampling
+  density.
+- **BIM sandbox.** Upload IFC or Revit, pick rooms to include, render a
+  synthetic camera array, then converge on the photo-set path.
+- **Pre-trained splat sandbox.** Direct upload of a 3DGS PLY (today's
+  demo path) plus a browser-side camera array tool that mirrors the
+  Blender add-on for users without Blender installed.
 
-**What changed vs v1 (`render_py` + MobileSAM + greedy matching, 0% class-matched):**
+Other planned work:
 
-- Real GPU rasterisation (gsplat CUDA, sm_89) gives photo-like RGB+depth
-  views instead of CPU point-sprite renders that lose the small objects.
-- SAM 3 text-prompted segmentation — the prompt **is** the class
-  label, no separate CLIP classify step.
-- Object-density camera-pose sampler (k-means on GT centroids → 30
-  cluster centers, camera 2 m back at eye height looking in)
-  replaces the grid that put cameras facing walls.
-- GT class names used as the SAM 3 prompt set (49 classes for the
-  demo). We don't read masks, bboxes, or counts from GT — only
-  the class-name string set, to make the eval apples-to-apples.
-  The user-supplied-splat path falls back to a generic 91-class
-  open interior vocab.
-- Hungarian matching instead of greedy first-best-IoU per prediction.
-- Structural classes filtered before matching so wall/floor/ceiling
-  trivially-perfect matches don't bias the score.
-
-**What this means.** At IoU ≥ 0.10 the pipeline class-matches **20**
-of 240 GT objects (F1 11.0%) and class-agnostic localises **39**
-(F1 21.4%) — real 3D detections from real CV. At the stricter
-IoU ≥ 0.25, class-matched is 6 (F1 3.3%) and class-agnostic is 14
-(F1 7.7%). The big precision gap between the two thresholds tells
-us SAM 3 finds the right *region* most of the time but its
-backprojected 3D bbox is loose against InteriorGS's tight GT bboxes
-— a mask-shrink / convex-hull pass before clustering should close
-that.
-
-The next two dials for v3:
-
-1. **Tighter 3D bboxes.** Current bboxes come from the AABB of a
-   per-class DBSCAN cluster of all backprojected Gaussians. A
-   per-instance shrink toward the densest sub-cluster, or even a
-   convex-hull volume, would lift IoU and roll the IoU≥0.10 hits
-   into IoU≥0.25 hits.
-2. **Multi-prompt per class.** Replace single-class SAM 3 prompts
-   with LLM-paraphrased ensembles (`"wine bottle on a bar shelf"`,
-   `"a high chair at the bar counter"`) — known to lift open-vocab
-   recall ~2× on indoor benchmarks.
-
-For the product demo, `seed_db.py` transparently uses our predicted
-inventory (`source=ours`, 151 rows in `scene_objects`) — hotspots, chat,
-and the MCP tools all run against real CV output, not a GT fallback.
-
-<details>
-<summary>Top per-class GT breakdown (what the evaluator's looking for)</summary>
-
-```json
-{
-  "jar":                 {"tp": 0, "fp": 0, "fn": 4,  "precision": 0, "recall": 0.0},
-  "teapot":              {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "cabinet":             {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "tray":                {"tp": 0, "fp": 0, "fn": 3,  "precision": 0, "recall": 0.0},
-  "side_table":          {"tp": 0, "fp": 0, "fn": 3,  "precision": 0, "recall": 0.0},
-  "decorative_painting": {"tp": 0, "fp": 0, "fn": 3,  "precision": 0, "recall": 0.0},
-  "suspended_ceiling":   {"tp": 0, "fp": 0, "fn": 2,  "precision": 0, "recall": 0.0},
-  "cup":                 {"tp": 0, "fp": 0, "fn": 24, "precision": 0, "recall": 0.0},
-  "door":                {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "dining_plate":        {"tp": 0, "fp": 0, "fn": 10, "precision": 0, "recall": 0.0},
-  "book":                {"tp": 0, "fp": 0, "fn": 4,  "precision": 0, "recall": 0.0},
-  "billboard":           {"tp": 0, "fp": 0, "fn": 2,  "precision": 0, "recall": 0.0},
-  "downlights":          {"tp": 0, "fp": 0, "fn": 14, "precision": 0, "recall": 0.0},
-  "box":                 {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "vase":                {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "coffee_maker":        {"tp": 0, "fp": 0, "fn": 2,  "precision": 0, "recall": 0.0},
-  "chocolate":           {"tp": 0, "fp": 0, "fn": 4,  "precision": 0, "recall": 0.0},
-  "decorative_pendant":  {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "plant":               {"tp": 0, "fp": 0, "fn": 4,  "precision": 0, "recall": 0.0},
-  "chandelier":          {"tp": 0, "fp": 0, "fn": 4,  "precision": 0, "recall": 0.0},
-  "multi_person_sofa":   {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "basket":              {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "wine":                {"tp": 0, "fp": 0, "fn": 70, "precision": 0, "recall": 0.0},
-  "placemat":            {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "bread":               {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "candle":              {"tp": 0, "fp": 0, "fn": 2,  "precision": 0, "recall": 0.0},
-  "ornament":            {"tp": 0, "fp": 0, "fn": 4,  "precision": 0, "recall": 0.0},
-  "wardrobe":            {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "fruit":               {"tp": 0, "fp": 0, "fn": 13, "precision": 0, "recall": 0.0},
-  "wine_glass":          {"tp": 0, "fp": 0, "fn": 5,  "precision": 0, "recall": 0.0},
-  "stool":               {"tp": 0, "fp": 0, "fn": 3,  "precision": 0, "recall": 0.0},
-  "canned_food":         {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "console":             {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "spotlight":           {"tp": 0, "fp": 0, "fn": 25, "precision": 0, "recall": 0.0},
-  "cake":                {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "table":               {"tp": 0, "fp": 0, "fn": 2,  "precision": 0, "recall": 0.0},
-  "spoon":               {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "high_chair":          {"tp": 0, "fp": 0, "fn": 10, "precision": 0, "recall": 0.0},
-  "chair":               {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "window":              {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "body_pillow":         {"tp": 0, "fp": 0, "fn": 2,  "precision": 0, "recall": 0.0},
-  "combination":         {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "sofa":                {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "kettle":              {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0},
-  "carpet":              {"tp": 0, "fp": 0, "fn": 1,  "precision": 0, "recall": 0.0}
-}
-```
-
-</details>
+- **Streaming chat.** SSE is wired; stream Gemini tokens through.
+- **Per-Gaussian instance IDs** (Gaussian Grouping–style) so the splat
+  itself carries object identity instead of needing a sidecar
+  inventory file.
 
 ---
 
 ## Quick start
 
-You need Docker + Docker Compose, `huggingface-cli` logged in (the
-InteriorGS dataset requires one-click license acceptance on HF), and a
-Google AI Studio API key for Gemini.
+You need Docker + Docker Compose, a HuggingFace token (the demo splat
+sits behind one license accept), and a Google AI Studio API key for
+Gemini.
 
 1. **Clone the repo.**
    ```bash
@@ -272,9 +227,9 @@ Google AI Studio API key for Gemini.
 2. **Configure environment.**
    ```bash
    cp .env.example .env
-   # edit .env and paste GEMINI_API_KEY=<your key>
+   # edit .env: set GEMINI_API_KEY=... and HF_TOKEN=...
    ```
-3. **Download the scene.**
+3. **Download the demo scene.**
    ```bash
    ./scripts/download_scene.sh 0003_839989
    ```
@@ -283,15 +238,16 @@ Google AI Studio API key for Gemini.
    docker compose up --build
    ```
 5. **Open the listing.**
-   Visit <http://localhost:3000>. Click the demo listing, orbit the wine
-   bar, click a hotspot, then open the chat.
+   Visit <http://localhost:3000>. Hover an object in the right sidebar —
+   its bounding box highlights in 3D. Open the chat to talk to the
+   concierge.
 
 ---
 
 ## Kubernetes demo
 
 The same stack runs on minikube with plain YAML — no Helm. See
-[`k8s/README.md`](./k8s/README.md) for the full walkthrough, or:
+[`k8s/README.md`](./k8s/README.md), or:
 
 ```bash
 cp k8s/99-secrets.example.yaml k8s/99-secrets.yaml
@@ -300,41 +256,20 @@ kubectl apply -f k8s/99-secrets.yaml
 ./k8s/apply.sh
 ```
 
-*Caveat: `minikube start` must already be running. `apply.sh` refuses to
-continue otherwise.*
-
----
-
-## v2 roadmap
-
-- **Fix the renderer.** Convert InteriorGS `.ply` → `.ksplat` ahead of
-  time, or swap the headless-Chrome rasterizer for a Python `gsplat`
-  rasterizer. Unblocks the segmentation pipeline end-to-end.
-- **Real camera trajectory from a user-uploaded video.** Extract poses via
-  COLMAP or MASt3R instead of the synthesized waypoint path.
-- **Better hotspot placement.** Raycast the viewer's click into the
-  Gaussian cloud instead of snapping to the nearest object centroid.
-- **Streaming chat.** SSE is already stubbed; wire Gemini's token stream
-  through.
-- **LoRA-tuned classifier.** Fine-tune OpenCLIP on in-the-wild real-estate
-  imagery to close the domain gap with OpenAI's original weights.
+`minikube start` must already be running.
 
 ---
 
 ## Credits
 
-- **Dataset:** [InteriorGS](https://huggingface.co/datasets/spatialverse/InteriorGS) (`spatialverse/InteriorGS`) — 1,000 pre-trained
-  indoor Gaussian splats with per-object class labels, 3D OBBs, room
-  structure, and occupancy maps. Used under its HuggingFace license.
-- **Concept:** [Gaussian Grouping](https://github.com/lkeab/gaussian-grouping) (Ye et al., ECCV 2024) — the idea of
-  per-Gaussian instance identities that the segmentation pipeline leans on.
+- **Dataset:** [InteriorGS](https://huggingface.co/datasets/spatialverse/InteriorGS) — pre-trained indoor Gaussian splats.
+- **Splat rasterizer:** [`gsplat`](https://github.com/nerfstudio-project/gsplat) (Nerfstudio Project) — CUDA 3DGS renderer.
 - **Web viewer:** [@mkkellogg/gaussian-splats-3d](https://github.com/mkkellogg/GaussianSplats3D).
-- **CLIP weights:** [OpenAI CLIP](https://github.com/openai/CLIP) ViT-B/32 via
-  [open-clip](https://github.com/mlfoundations/open_clip).
-- **2D segmentation:** [MobileSAM](https://github.com/ChaoningZhang/MobileSAM) (Chaoning Zhang et al., 2023).
+- **2D segmentation:** [SAM 3](https://github.com/facebookresearch/sam3) (Meta Superintelligence Labs, 2026).
+- **CLIP weights:** [OpenAI CLIP](https://github.com/openai/CLIP) ViT-B/32 via [open-clip](https://github.com/mlfoundations/open_clip).
+- **Camera-array authoring:** Olli Huttunen's *Camera Array Tool* Blender add-on, extended with a SceneAgent JSON exporter.
 - **Agent framework:** [LangGraph](https://langchain-ai.github.io/langgraph/).
-- **Tool protocol:** Anthropic's [Model Context Protocol](https://modelcontextprotocol.io/) + the
-  [Python SDK](https://github.com/modelcontextprotocol/python-sdk).
+- **Tool protocol:** Anthropic's [Model Context Protocol](https://modelcontextprotocol.io/).
 - **LLM / VLM:** [Gemini 2.0 Flash](https://ai.google.dev/gemini-api/docs/models/gemini).
 - **Vector search:** [pgvector](https://github.com/pgvector/pgvector).
 

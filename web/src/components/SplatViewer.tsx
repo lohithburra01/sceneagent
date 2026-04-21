@@ -165,14 +165,20 @@ export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProp
     let raf = 0;
     let last = performance.now();
 
-    function targetIsTextInput(t: EventTarget | null) {
-      if (!(t instanceof HTMLElement)) return false;
-      const tag = t.tagName;
-      return tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable;
+    function isTypingTarget(): boolean {
+      // document.activeElement is the truly-focused element. e.target
+      // can be the document/body in capture phase if focus didn't move,
+      // and we can't reliably distinguish "user clicked into chat" from
+      // that.
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return false;
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return true;
+      if (el.isContentEditable) return true;
+      return false;
     }
 
     function onKeyDown(e: KeyboardEvent) {
-      if (targetIsTextInput(e.target)) return;
+      if (isTypingTarget()) return;
       const k = e.key.toLowerCase();
       if (["w", "a", "s", "d", "q", "e"].includes(k)) {
         keys.add(k);
@@ -181,6 +187,8 @@ export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProp
       }
     }
     function onKeyUp(e: KeyboardEvent) {
+      // Always release keys on key-up so a key that started before focusing
+      // an input doesn't get stuck.
       keys.delete(e.key.toLowerCase());
     }
 
