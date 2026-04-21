@@ -138,10 +138,14 @@ async def _dispatch(tool: str, scene_slug: str, args: dict[str, Any]) -> Any:
 
 
 def _extract_json_object(text: str) -> Optional[dict[str, Any]]:
-    """Best-effort JSON-object extractor. Tolerates ```json fences."""
+    """Best-effort JSON-object extractor. Tolerates ```json fences and
+    reasoning-model <think>...</think> preambles (Qwen-3, DeepSeek-R1, etc).
+    """
     if not text:
         return None
     t = text.strip()
+    # Strip <think>...</think> blocks (reasoning models on Groq emit them).
+    t = re.sub(r"<think>.*?</think>", "", t, flags=re.DOTALL).strip()
     if t.startswith("```"):
         t = re.sub(r"^```(?:json)?", "", t).strip()
         t = re.sub(r"```$", "", t).strip()
@@ -252,15 +256,23 @@ def _openai_compat_plan(state: AgentState) -> Optional[dict[str, Any]]:
 
     try:
         client = OpenAI(api_key=api_key, base_url=base_url, timeout=30.0)
-        resp = client.chat.completions.create(
+        # Some providers/models reject response_format=json_object (Qwen
+        # reasoning models, smaller llamas). Try with it first, fall back
+        # without it on a 4xx — _extract_json_object handles loose output.
+        kwargs: dict[str, Any] = dict(
             model=model_name,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": _build_transcript(state)},
             ],
             temperature=0.2,
-            response_format={"type": "json_object"},
         )
+        try:
+            resp = client.chat.completions.create(
+                **kwargs, response_format={"type": "json_object"}
+            )
+        except Exception:
+            resp = client.chat.completions.create(**kwargs)
         raw = (resp.choices[0].message.content or "").strip()
         plan = _normalize_plan(_extract_json_object(raw))
         if plan is None:
