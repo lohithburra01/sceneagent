@@ -53,18 +53,32 @@ async def list_objects(
             """,
             *args,
         )
-    return [
-        {
+    out = []
+    for r in rows:
+        bmin = list(r["bbox_min"]) if r["bbox_min"] is not None else None
+        bmax = list(r["bbox_max"]) if r["bbox_max"] is not None else None
+        # Confidence proxy: log-scaled bbox diagonal — same approach as the
+        # /scenes/:slug/detections endpoint, so the agent and the sidebar
+        # see the same numbers.
+        conf = None
+        if bmin and bmax:
+            import math as _m
+            diag = _m.sqrt(sum((bmax[i] - bmin[i]) ** 2 for i in range(3)))
+            conf = 0.4 + 0.55 * min(1.0, _m.log10(max(diag, 0.05) * 10) / 1.7)
+        out.append({
             "id": str(r["id"]),
             "instance_id": r["instance_id"],
             "class_name": r["class_name"],
             "room_label": r["room_label"],
             "centroid": list(r["centroid"]) if r["centroid"] is not None else None,
-            "bbox_min": list(r["bbox_min"]) if r["bbox_min"] is not None else None,
-            "bbox_max": list(r["bbox_max"]) if r["bbox_max"] is not None else None,
-        }
-        for r in rows
-    ]
+            "bbox_min": bmin,
+            "bbox_max": bmax,
+            "confidence": conf,
+        })
+    # Sort by confidence descending so the agent can pick "highest" trivially
+    # without re-sorting in the planner.
+    out.sort(key=lambda d: -(d["confidence"] or 0))
+    return out
 
 
 async def list_hotspots(
