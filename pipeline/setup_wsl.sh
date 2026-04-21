@@ -9,3 +9,11 @@ export TORCH_CUDA_ARCH_LIST="8.9"  # RTX 4060 Laptop = Ada Lovelace sm_89
 export CC=gcc-12
 export CXX=g++-12
 source "$HOME/venvs/sa/bin/activate"
+# Pull HF_TOKEN (and any other secrets) from the gitignored .env
+ENV_FILE="/mnt/c/Users/91910/Downloads/sceneagent/.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+fi
