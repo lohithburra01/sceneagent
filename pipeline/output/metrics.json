@@ -1,27 +1,27 @@
 {
-  "num_predicted": 254,
+  "num_predicted": 151,
   "num_ground_truth": 240,
-  "tp": 4,
-  "fp": 228,
-  "fn": 232,
-  "precision": 0.017241379310344827,
-  "recall": 0.01694915254237288,
-  "f1": 0.017094017094017092,
+  "tp": 6,
+  "fp": 123,
+  "fn": 230,
+  "precision": 0.046511627906976744,
+  "recall": 0.025423728813559324,
+  "f1": 0.03287671232876713,
   "iou_threshold": 0.25,
   "per_class": {
-    "wine": {
+    "dining_table": {
       "precision": 0.0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 2,
-      "fn": 70
+      "fp": 23,
+      "fn": 2
     },
-    "coffee_maker": {
+    "console": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
-      "fn": 2
+      "fn": 1
     },
     "spoon": {
       "precision": 0,
@@ -30,11 +30,11 @@
       "fp": 0,
       "fn": 1
     },
-    "kettle": {
-      "precision": 0.0,
+    "cake": {
+      "precision": 0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 3,
+      "fp": 0,
       "fn": 1
     },
     "dining_plate": {
@@ -44,61 +44,40 @@
       "fp": 0,
       "fn": 10
     },
-    "cake": {
+    "wine_glass": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 6,
+      "fn": 5
+    },
+    "ornament": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
+      "fn": 4
+    },
+    "sofa": {
+      "precision": 0.1111111111111111,
+      "recall": 0.5,
+      "tp": 1,
+      "fp": 8,
       "fn": 1
     },
     "decorative_painting": {
-      "precision": 0.0,
+      "precision": 0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 1,
+      "fp": 0,
       "fn": 3
     },
-    "body_pillow": {
+    "chocolate": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
-      "fn": 2
-    },
-    "carpet": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "chandelier": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 5
-    },
-    "fruit": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 13
-    },
-    "candle": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 2
-    },
-    "lamp": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 3,
-      "fn": 0
+      "fn": 4
     },
     "cup": {
       "precision": 0.0,
@@ -107,61 +86,12 @@
       "fp": 4,
       "fn": 24
     },
-    "doormat": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 2,
-      "fn": 0
-    },
-    "downlights": {
-      "precision": 0.2,
-      "recall": 0.02564102564102564,
-      "tp": 1,
-      "fp": 4,
-      "fn": 38
-    },
-    "wine_glass": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 58,
-      "fn": 5
-    },
-    "side_table": {
+    "box": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
-      "fn": 3
-    },
-    "vase": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 4,
       "fn": 1
-    },
-    "plant": {
-      "precision": 0.07407407407407407,
-      "recall": 0.5,
-      "tp": 2,
-      "fp": 25,
-      "fn": 2
-    },
-    "ceiling_fan": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 1,
-      "fn": 0
-    },
-    "pot": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 5,
-      "fn": 0
     },
     "jar": {
       "precision": 0,
@@ -170,28 +100,7 @@
       "fp": 0,
       "fn": 4
     },
-    "canned_food": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "chair": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 12,
-      "fn": 1
-    },
-    "teapot": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "basket": {
+    "cabinet": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
@@ -205,56 +114,42 @@
       "fp": 4,
       "fn": 1
     },
-    "pillow": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 26,
-      "fn": 0
+    "high_chair": {
+      "precision": 0.4,
+      "recall": 0.15384615384615385,
+      "tp": 2,
+      "fp": 3,
+      "fn": 11
     },
-    "sculpture": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 6,
-      "fn": 0
-    },
-    "tray": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 9,
-      "fn": 3
-    },
-    "console": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 1
-    },
-    "dining_table": {
-      "precision": 0.0625,
-      "recall": 0.5,
-      "tp": 1,
-      "fp": 15,
-      "fn": 1
-    },
-    "billboard": {
+    "body_pillow": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
       "fn": 2
     },
-    "box": {
+    "downlights": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 19,
+      "fn": 39
+    },
+    "coffee_maker": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
       "fp": 0,
+      "fn": 2
+    },
+    "chair": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 26,
       "fn": 1
     },
-    "cabinet": {
+    "canned_food": {
       "precision": 0,
       "recall": 0.0,
       "tp": 0,
@@ -268,33 +163,40 @@
       "fp": 0,
       "fn": 1
     },
-    "sofa": {
+    "fruit": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 13
+    },
+    "wardrobe": {
       "precision": 0.0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 4,
+      "fp": 8,
+      "fn": 1
+    },
+    "plant": {
+      "precision": 0.15384615384615385,
+      "recall": 0.5,
+      "tp": 2,
+      "fp": 11,
       "fn": 2
     },
-    "bowl": {
+    "candle": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 2
+    },
+    "vase": {
       "precision": 0.0,
-      "recall": 0,
+      "recall": 0.0,
       "tp": 0,
       "fp": 4,
-      "fn": 0
-    },
-    "ornament": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 4
-    },
-    "chocolate": {
-      "precision": 0,
-      "recall": 0.0,
-      "tp": 0,
-      "fp": 0,
-      "fn": 4
+      "fn": 1
     },
     "book": {
       "precision": 0.0,
@@ -303,40 +205,54 @@
       "fp": 2,
       "fn": 4
     },
-    "coffee_table": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 6,
-      "fn": 0
-    },
-    "desk": {
-      "precision": 0.0,
-      "recall": 0,
-      "tp": 0,
-      "fp": 16,
-      "fn": 0
-    },
-    "wardrobe": {
-      "precision": 0.0,
+    "basket": {
+      "precision": 0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 3,
+      "fp": 0,
       "fn": 1
     },
-    "shelf_of_bottles": {
-      "precision": 0.0,
-      "recall": 0,
+    "billboard": {
+      "precision": 0,
+      "recall": 0.0,
       "tp": 0,
-      "fp": 2,
-      "fn": 0
+      "fp": 0,
+      "fn": 2
     },
-    "high_chair": {
+    "side_table": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 3
+    },
+    "wine": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 70
+    },
+    "carpet": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
+    },
+    "kettle": {
       "precision": 0.0,
       "recall": 0.0,
       "tp": 0,
-      "fp": 3,
-      "fn": 13
+      "fp": 2,
+      "fn": 1
+    },
+    "teapot": {
+      "precision": 0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1
     },
     "combination": {
       "precision": 0,
@@ -345,70 +261,77 @@
       "fp": 0,
       "fn": 1
     },
-    "potted_plant": {
-      "precision": 0.0,
-      "recall": 0,
+    "tray": {
+      "precision": 0.25,
+      "recall": 0.3333333333333333,
+      "tp": 1,
+      "fp": 3,
+      "fn": 2
+    },
+    "chandelier": {
+      "precision": 0,
+      "recall": 0.0,
       "tp": 0,
-      "fp": 4,
-      "fn": 0
+      "fp": 0,
+      "fn": 5
     }
   },
   "class_agnostic_at_0p25": {
-    "tp": 16,
-    "fp": 216,
-    "fn": 220,
-    "precision": 0.06896551724137931,
-    "recall": 0.06779661016949153,
-    "f1": 0.06837606837606837
+    "tp": 14,
+    "fp": 115,
+    "fn": 222,
+    "precision": 0.10852713178294573,
+    "recall": 0.059322033898305086,
+    "f1": 0.07671232876712329
   },
   "variants": {
     "class_matched@0.1": {
-      "tp": 10,
-      "fp": 222,
-      "fn": 226,
-      "precision": 0.04310344827586207,
-      "recall": 0.0423728813559322,
-      "f1": 0.042735042735042736
+      "tp": 20,
+      "fp": 109,
+      "fn": 216,
+      "precision": 0.15503875968992248,
+      "recall": 0.0847457627118644,
+      "f1": 0.1095890410958904
     },
     "class_agnostic@0.1": {
-      "tp": 31,
-      "fp": 201,
-      "fn": 205,
-      "precision": 0.1336206896551724,
-      "recall": 0.13135593220338984,
-      "f1": 0.13247863247863248
+      "tp": 39,
+      "fp": 90,
+      "fn": 197,
+      "precision": 0.3023255813953488,
+      "recall": 0.1652542372881356,
+      "f1": 0.2136986301369863
     },
     "class_matched@0.25": {
-      "tp": 4,
-      "fp": 228,
-      "fn": 232,
-      "precision": 0.017241379310344827,
-      "recall": 0.01694915254237288,
-      "f1": 0.017094017094017092
+      "tp": 6,
+      "fp": 123,
+      "fn": 230,
+      "precision": 0.046511627906976744,
+      "recall": 0.025423728813559324,
+      "f1": 0.03287671232876713
     },
     "class_agnostic@0.25": {
-      "tp": 16,
-      "fp": 216,
-      "fn": 220,
-      "precision": 0.06896551724137931,
-      "recall": 0.06779661016949153,
-      "f1": 0.06837606837606837
+      "tp": 14,
+      "fp": 115,
+      "fn": 222,
+      "precision": 0.10852713178294573,
+      "recall": 0.059322033898305086,
+      "f1": 0.07671232876712329
     },
     "class_matched@0.5": {
       "tp": 2,
-      "fp": 230,
+      "fp": 127,
       "fn": 234,
-      "precision": 0.008620689655172414,
+      "precision": 0.015503875968992248,
       "recall": 0.00847457627118644,
-      "f1": 0.008547008547008546
+      "f1": 0.010958904109589041
     },
     "class_agnostic@0.5": {
       "tp": 3,
-      "fp": 229,
+      "fp": 126,
       "fn": 233,
-      "precision": 0.01293103448275862,
+      "precision": 0.023255813953488372,
       "recall": 0.012711864406779662,
-      "f1": 0.012820512820512822
+      "f1": 0.016438356164383564
     }
   },
   "note": "InteriorGS 0003_839989 (wine bar). Pipeline: 30 views rendered from a custom PlayCanvas-compressed PLY decoder + software splat rasterizer, MobileSAM masks, OpenCLIP ViT-B/32 zero-shot over a 54-class home+commercial vocabulary, multi-view voting with mask-area normalisation, DBSCAN per class. Headline numbers are class_matched@IoU>=0.25; class_agnostic@* isolates localisation from classification quality."

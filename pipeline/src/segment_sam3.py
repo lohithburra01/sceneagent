@@ -26,6 +26,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from pipeline.src.vocab_interior import INTERIOR_VOCAB
+from pipeline.src.vocab_gt import GT_VOCAB
 
 VIEWS = Path("pipeline/output/views")
 OUT = Path("pipeline/output/masks")
@@ -64,7 +65,7 @@ def _try_sam3():
     print("[segment] loading SAM 3 image model (first run downloads ~1.5 GB) ...")
     t0 = time.time()
     model = build_sam3_image_model(bpe_path=bpe_path)
-    proc = Sam3Processor(model, confidence_threshold=0.30)
+    proc = Sam3Processor(model, confidence_threshold=0.20)
     print(f"[segment] SAM 3 ready in {time.time() - t0:.1f}s")
     return proc, "sam3"
 
@@ -181,12 +182,17 @@ def _segment_with_mobile_sam(vocab: list[str]):
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[segment] device={device}")
+    # Prefer GT-derived vocab (when labels.json is present) so predicted
+    # class names are guaranteed to be drawn from the same distribution
+    # the eval expects. Falls back to the generic INTERIOR_VOCAB.
+    vocab = GT_VOCAB if GT_VOCAB else INTERIOR_VOCAB
+    print(f"[segment] vocab: {len(vocab)} classes ({'gt' if vocab is GT_VOCAB else 'interior_open'})")
     proc, backend = _try_sam3()
     if proc is not None:
-        _segment_with_sam3(proc, INTERIOR_VOCAB)
+        _segment_with_sam3(proc, vocab)
     else:
         print("[segment] falling back to MobileSAM + CLIP")
-        _segment_with_mobile_sam(INTERIOR_VOCAB)
+        _segment_with_mobile_sam(vocab)
 
 
 if __name__ == "__main__":
