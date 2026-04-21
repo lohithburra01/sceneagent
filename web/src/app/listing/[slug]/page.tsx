@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   getScene,
-  getHotspots,
+  getDetections,
   seedMatch,
   splatUrlFor,
   getMetrics,
@@ -30,16 +30,19 @@ interface PageProps {
 export default function ListingPage({ params }: PageProps) {
   const { slug } = params;
   const qc = useQueryClient();
-  const viewerRef = useRef<unknown>(null);
+  // viewer kept in React state (not a ref) so ObjectOverlay re-renders
+  // the moment the splat viewer attaches its THREE scene.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [viewer, setViewer] = useState<any | null>(null);
 
   const sceneQuery = useQuery({
     queryKey: ["scene", slug],
     queryFn: () => getScene(slug),
   });
 
-  const hotspotsQuery = useQuery({
-    queryKey: ["hotspots", slug],
-    queryFn: () => getHotspots(slug),
+  const detectionsQuery = useQuery({
+    queryKey: ["detections", slug],
+    queryFn: () => getDetections(slug),
   });
 
   const metricsQuery = useQuery({
@@ -54,6 +57,9 @@ export default function ListingPage({ params }: PageProps) {
     },
   });
 
+  // Notes are matched once per session so chat tools have hotspots to
+  // talk about. Detections (the bbox-able objects) are independent of
+  // this and load via getDetections above.
   useEffect(() => {
     seed.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,22 +73,15 @@ export default function ListingPage({ params }: PageProps) {
     return `${base}${raw.startsWith("/") ? raw : `/${raw}`}`;
   }, [sceneQuery.data, slug]);
 
-  const hotspots = hotspotsQuery.data ?? [];
+  const detections = detectionsQuery.data ?? [];
 
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-neutral-950 text-neutral-100">
-      {/* Splat fills the area left of the sidebar */}
       <div className="absolute inset-0 mr-[340px]">
-        <SplatViewer
-          splatUrl={splatUrl}
-          onViewerReady={(v) => {
-            viewerRef.current = v;
-          }}
-        />
-        <ObjectOverlay hotspots={hotspots} viewerRef={viewerRef} />
+        <SplatViewer splatUrl={splatUrl} onViewerReady={setViewer} />
+        <ObjectOverlay detections={detections} viewer={viewer} />
       </div>
 
-      {/* Title chip */}
       <div className="fixed top-6 left-6 z-20 pointer-events-none">
         <div className="text-[10px] uppercase tracking-[0.22em] text-neutral-400">
           SceneAgent
@@ -97,14 +96,13 @@ export default function ListingPage({ params }: PageProps) {
         )}
       </div>
 
-      {/* Controls hint */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none mr-[340px]">
         <div className="px-3 py-1.5 rounded-full text-[11px] text-neutral-400 bg-neutral-950/60 border border-neutral-800 backdrop-blur tracking-wide">
-          W S forward · A D strafe · Q E up-down · drag to look
+          W S forward · A D strafe · Q E up-down · drag to look · hover sidebar item to highlight
         </div>
       </div>
 
-      <InventorySidebar hotspots={hotspots} metrics={metricsQuery.data} />
+      <InventorySidebar detections={detections} metrics={metricsQuery.data} />
       <ChatOverlay slug={slug} />
     </main>
   );

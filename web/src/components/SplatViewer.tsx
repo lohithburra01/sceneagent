@@ -96,10 +96,21 @@ export default function SplatViewer({ splatUrl, onViewerReady }: SplatViewerProp
 
     const cam: THREE.Camera = v.camera;
     const target = toVec3(flyToPosition);
-    // Position the camera ~2.5m away from target along a consistent offset so
-    // the user sees the point we are flying to.
-    const offset = new THREE.Vector3(2.5, 2.5, 1.5);
-    const destination = target.clone().add(offset);
+    // Position the camera ~2 m away from the target, *toward* the
+    // current camera position. This keeps us inside the room and avoids
+    // the old "always offset (+2.5,+2.5,+1.5)" trap that landed the
+    // camera outside the bbox for objects in the far corner.
+    const dirFromTarget = cam.position.clone().sub(target);
+    if (dirFromTarget.lengthSq() < 1e-6) {
+      // current camera is on top of the target — fall back to a
+      // small eye-level back-up
+      dirFromTarget.set(0, 1, 0.3);
+    }
+    dirFromTarget.normalize();
+    // keep a slight upward component so we look slightly down at the object
+    if (dirFromTarget.z < 0.15) dirFromTarget.z = 0.15;
+    dirFromTarget.normalize();
+    const destination = target.clone().add(dirFromTarget.multiplyScalar(2.0));
 
     flyAnimRef.current = {
       from: cam.position.clone(),

@@ -1,29 +1,32 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import clsx from "clsx";
-import { Hotspot, SceneMetrics } from "@/lib/api";
+import { Detection, SceneMetrics } from "@/lib/api";
 import { useViewerStore } from "@/stores/viewer";
 
 interface Props {
-  hotspots: Hotspot[];
+  detections: Detection[];
   metrics: SceneMetrics | null | undefined;
 }
 
-export default function InventorySidebar({ hotspots, metrics }: Props) {
+export default function InventorySidebar({ detections, metrics }: Props) {
   const flyTo = useViewerStore((s) => s.flyTo);
   const setActive = useViewerStore((s) => s.setActiveObject);
   const setHover = useViewerStore((s) => s.setHoveredObject);
   const activeId = useViewerStore((s) => s.activeObjectId);
+  const [filter, setFilter] = useState("");
 
   const grouped = useMemo(() => {
-    const by: Record<string, Hotspot[]> = {};
-    for (const h of hotspots) {
-      const k = h.class_name ?? "other";
-      (by[k] ||= []).push(h);
+    const f = filter.trim().toLowerCase();
+    const by: Record<string, Detection[]> = {};
+    for (const d of detections) {
+      if (f && !d.class_name.toLowerCase().includes(f)) continue;
+      const k = d.class_name || "other";
+      (by[k] ||= []).push(d);
     }
     return Object.entries(by).sort((a, b) => b[1].length - a[1].length);
-  }, [hotspots]);
+  }, [detections, filter]);
 
   return (
     <aside
@@ -33,18 +36,31 @@ export default function InventorySidebar({ hotspots, metrics }: Props) {
         "text-neutral-100 flex flex-col"
       )}
     >
-      <header className="px-5 pt-6 pb-4 border-b border-neutral-800/80">
+      <header className="px-5 pt-6 pb-3 border-b border-neutral-800/80">
         <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-500">
           Inventory
         </div>
         <div className="text-lg font-medium mt-0.5">
-          {hotspots.length} detected objects
+          {detections.length} detected objects
         </div>
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="filter by class…"
+          className={clsx(
+            "mt-3 w-full bg-neutral-900/70 border border-neutral-800 rounded-md",
+            "px-2.5 py-1.5 text-xs text-neutral-200",
+            "placeholder:text-neutral-600 outline-none focus:border-neutral-700"
+          )}
+        />
       </header>
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
         {grouped.length === 0 && (
           <div className="px-2 py-6 text-xs text-neutral-500">
-            No objects detected yet.
+            {detections.length === 0
+              ? "No detections — pipeline hasn't run."
+              : "No matches for filter."}
           </div>
         )}
         {grouped.map(([cls, items]) => (
@@ -53,27 +69,29 @@ export default function InventorySidebar({ hotspots, metrics }: Props) {
               {cls} · {items.length}
             </div>
             <ul className="space-y-0.5">
-              {items.map((h) => (
-                <li key={h.id}>
+              {items.map((d) => (
+                <li key={d.id}>
                   <button
                     type="button"
-                    onMouseEnter={() => setHover(h.id)}
+                    onMouseEnter={() => setHover(d.id)}
                     onMouseLeave={() => setHover(null)}
                     onClick={() => {
-                      setActive(h.id);
-                      flyTo(h.position);
+                      setActive(d.id);
+                      flyTo(d.centroid);
                     }}
                     className={clsx(
                       "w-full text-left px-2 py-1.5 rounded-md text-sm",
                       "hover:bg-neutral-900/80 transition-colors",
-                      activeId === h.id && "bg-neutral-900/80"
+                      activeId === d.id && "bg-neutral-900/80 ring-1 ring-amber-300/40"
                     )}
                   >
-                    <div className="text-neutral-200 truncate">
-                      {h.note_text || cls}
-                    </div>
-                    <div className="text-[10px] text-neutral-500 mt-0.5">
-                      {(h.match_confidence * 100).toFixed(0)}%
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-neutral-200 truncate">
+                        {cls} <span className="text-neutral-500">#{d.instance_id}</span>
+                      </span>
+                      <span className="text-[10px] text-amber-300/80 tabular-nums shrink-0">
+                        {(d.confidence * 100).toFixed(0)}%
+                      </span>
                     </div>
                   </button>
                 </li>

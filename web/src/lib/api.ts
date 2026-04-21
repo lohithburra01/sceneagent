@@ -38,6 +38,18 @@ export interface Hotspot {
   centroid?: Vec3 | null;
 }
 
+export interface Detection {
+  id: string;
+  instance_id: number;
+  class_name: string;
+  room_label: string | null;
+  centroid: Vec3;
+  bbox_min: Vec3;
+  bbox_max: Vec3;
+  source: string;
+  confidence: number;
+}
+
 export interface SceneMetrics {
   f1: number;
   precision: number;
@@ -118,6 +130,10 @@ export function seedMatch(slug: string): Promise<{ matched: number }> {
   return request<{ matched: number }>(`/scenes/${slug}/notes/seed-match`, {
     method: "POST",
   });
+}
+
+export function getDetections(slug: string): Promise<Detection[]> {
+  return request<Detection[]>(`/scenes/${slug}/detections`);
 }
 
 export function getMetrics(slug: string): Promise<SceneMetrics | null> {
