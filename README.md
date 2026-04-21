@@ -1,5 +1,4 @@
 
-https://github.com/user-attachments/assets/7ccb0068-5ded-4579-a503-195164e4443a
 # SceneAgent
 
 **An end-to-end pipeline that turns any 3D capture into a semantically queryable scene — with an agentic AI concierge that actually looks at the space when it needs to answer a question.**
