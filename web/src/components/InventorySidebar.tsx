@@ -16,6 +16,9 @@ export default function InventorySidebar({ detections, metrics }: Props) {
   const setHover = useViewerStore((s) => s.setHoveredObject);
   const activeId = useViewerStore((s) => s.activeObjectId);
   const [filter, setFilter] = useState("");
+  // Default OFF — clicking should highlight only, not yank the camera.
+  // Toggle on in the header when you actually want auto-fly.
+  const [autoFly, setAutoFly] = useState(false);
 
   const grouped = useMemo(() => {
     const f = filter.trim().toLowerCase();
@@ -54,6 +57,15 @@ export default function InventorySidebar({ detections, metrics }: Props) {
             "placeholder:text-neutral-600 outline-none focus:border-neutral-700"
           )}
         />
+        <label className="mt-2 flex items-center gap-2 text-[11px] text-neutral-400 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoFly}
+            onChange={(e) => setAutoFly(e.target.checked)}
+            className="accent-amber-300"
+          />
+          auto-fly camera on click
+        </label>
       </header>
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
         {grouped.length === 0 && (
@@ -70,17 +82,17 @@ export default function InventorySidebar({ detections, metrics }: Props) {
             </div>
             <ul className="space-y-0.5">
               {items.map((d) => (
-                <li key={d.id}>
+                <li key={d.id} className="group flex items-stretch gap-1">
                   <button
                     type="button"
                     onMouseEnter={() => setHover(d.id)}
                     onMouseLeave={() => setHover(null)}
                     onClick={() => {
                       setActive(d.id);
-                      flyTo(d.centroid);
+                      if (autoFly) flyTo(d.centroid);
                     }}
                     className={clsx(
-                      "w-full text-left px-2 py-1.5 rounded-md text-sm",
+                      "flex-1 text-left px-2 py-1.5 rounded-md text-sm",
                       "hover:bg-neutral-900/80 transition-colors",
                       activeId === d.id && "bg-neutral-900/80 ring-1 ring-amber-300/40"
                     )}
@@ -93,6 +105,23 @@ export default function InventorySidebar({ detections, metrics }: Props) {
                         {(d.confidence * 100).toFixed(0)}%
                       </span>
                     </div>
+                  </button>
+                  {/* explicit fly-to button so the user can opt in per click */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActive(d.id);
+                      flyTo(d.centroid);
+                    }}
+                    title="Fly camera to this object"
+                    aria-label="Fly to"
+                    className={clsx(
+                      "px-2 rounded-md text-[11px] text-neutral-500",
+                      "opacity-0 group-hover:opacity-100",
+                      "hover:bg-neutral-900/80 hover:text-amber-300 transition-all"
+                    )}
+                  >
+                    ✈
                   </button>
                 </li>
               ))}
