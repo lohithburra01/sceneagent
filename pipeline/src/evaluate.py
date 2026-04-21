@@ -9,6 +9,14 @@ from pathlib import Path
 from collections import Counter
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
+
+# Dropped from both sides before matching — they bias the eval
+# (large regions match trivially and overwhelm the score).
+STRUCTURAL = {
+    "wall", "floor", "ceiling", "suspended_ceiling",
+    "window", "door", "stairs", "column",
+}
 
 OURS_PATH = Path("pipeline/output/object_inventory.json")
 GT_PATH = Path("data/scene/demo/labels.json")
@@ -60,31 +68,55 @@ def normalize_class(s: str) -> str:
 
 
 def _eval_at(ours, gt, iou_thresh: float, require_class_match: bool):
-    tp = fp = fn = 0
-    class_tp = Counter(); class_fn = Counter(); class_fp = Counter()
-    matched_gt = set()
-    for o in ours:
-        oc = normalize_class(o["class_name"])
-        best_iou = 0.0; best_gt = None
-        for g in gt:
-            if g["instance_id"] in matched_gt:
-                continue
-            iv = bbox_iou(o["bbox_min"], o["bbox_max"], g["bbox_min"], g["bbox_max"])
-            if iv > best_iou:
-                best_iou, best_gt = iv, g
-        if best_gt and best_iou >= iou_thresh:
-            cls_ok = (normalize_class(best_gt["class_name"]) == oc)
-            if cls_ok or not require_class_match:
-                tp += 1; class_tp[oc] += 1
-                matched_gt.add(best_gt["instance_id"])
-            else:
-                fp += 1; class_fp[oc] += 1
-        else:
-            fp += 1; class_fp[oc] += 1
-    for g in gt:
-        if g["instance_id"] not in matched_gt:
-            fn += 1
-            class_fn[g["class_name"]] += 1
+    ours_f = [o for o in ours if normalize_class(o["class_name"]) not in STRUCTURAL]
+    gt_f = [g for g in gt if normalize_class(g["class_name"]) not in STRUCTURAL]
+
+    n, m = len(ours_f), len(gt_f)
+    INF = 10.0
+    if n == 0 or m == 0:
+        tp = 0
+        fp = n
+        fn = m
+        class_tp: Counter = Counter()
+        class_fp: Counter = Counter(normalize_class(o["class_name"]) for o in ours_f)
+        class_fn: Counter = Counter(normalize_class(g["class_name"]) for g in gt_f)
+    else:
+        cost = np.full((n, m), INF, dtype=np.float32)
+        for i, o in enumerate(ours_f):
+            oc = normalize_class(o["class_name"])
+            for j, g in enumerate(gt_f):
+                iv = bbox_iou(o["bbox_min"], o["bbox_max"],
+                              g["bbox_min"], g["bbox_max"])
+                if iv < iou_thresh:
+                    continue
+                if require_class_match and normalize_class(g["class_name"]) != oc:
+                    continue
+                cost[i, j] = 1.0 - iv
+
+        row_ind, col_ind = linear_sum_assignment(cost)
+        matched_pred: set[int] = set()
+        matched_gt: set[int] = set()
+        tp = 0
+        class_tp = Counter()
+        for i, j in zip(row_ind, col_ind):
+            if cost[i, j] < INF:
+                tp += 1
+                matched_pred.add(i)
+                matched_gt.add(j)
+                class_tp[normalize_class(ours_f[i]["class_name"])] += 1
+        fp = 0
+        class_fp = Counter()
+        for i, o in enumerate(ours_f):
+            if i not in matched_pred:
+                fp += 1
+                class_fp[normalize_class(o["class_name"])] += 1
+        fn = 0
+        class_fn = Counter()
+        for j, g in enumerate(gt_f):
+            if j not in matched_gt:
+                fn += 1
+                class_fn[normalize_class(g["class_name"])] += 1
+
     p = tp / (tp + fp) if (tp + fp) else 0.0
     r = tp / (tp + fn) if (tp + fn) else 0.0
     f1 = 2 * p * r / (p + r) if (p + r) else 0.0
@@ -92,8 +124,11 @@ def _eval_at(ours, gt, iou_thresh: float, require_class_match: bool):
     for c in set(class_tp) | set(class_fn) | set(class_fp):
         pc = class_tp[c] / (class_tp[c] + class_fp[c]) if (class_tp[c] + class_fp[c]) else 0
         rc = class_tp[c] / (class_tp[c] + class_fn[c]) if (class_tp[c] + class_fn[c]) else 0
-        per_class[c] = {"precision": pc, "recall": rc, "tp": class_tp[c], "fp": class_fp[c], "fn": class_fn[c]}
-    return {"tp": tp, "fp": fp, "fn": fn, "precision": p, "recall": r, "f1": f1, "per_class": per_class}
+        per_class[c] = {"precision": pc, "recall": rc,
+                        "tp": class_tp[c], "fp": class_fp[c], "fn": class_fn[c]}
+    return {"tp": tp, "fp": fp, "fn": fn,
+            "precision": p, "recall": r, "f1": f1,
+            "per_class": per_class}
 
 
 def main():
