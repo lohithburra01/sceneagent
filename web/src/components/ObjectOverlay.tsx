@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { Detection } from "@/lib/api";
 import { useViewerStore } from "@/stores/viewer";
@@ -12,235 +12,197 @@ interface Props {
 }
 
 /**
- * Adds a wireframe bbox + a text-sprite label for the active/hovered
- * detection to the splat viewer's THREE.Scene.
- *
- * Robust against mkkellogg's viewer attaching its scene asynchronously:
- * the effect polls a few candidate property names until a usable
- * THREE.Scene shows up. Logs the result to the console so we can debug
- * if it never resolves.
+ * Pure HTML/SVG overlay — does NOT add anything to the splat viewer's
+ * THREE.Scene (mkkellogg does not reliably expose one for us to add to).
+ * Instead: every animation frame we read the splat viewer's camera,
+ * project the active/hovered detection's 8 bbox corners to NDC, then
+ * to pixel coordinates, and draw:
+ *   - an SVG box outline + corner ticks
+ *   - a positioned <div> label "class · NN%"
+ * over the WebGL canvas.
  */
 export default function ObjectOverlay({ detections, viewer }: Props) {
   const activeId = useViewerStore((s) => s.activeObjectId);
   const hoverId = useViewerStore((s) => s.hoveredObjectId);
 
-  const boxRef = useRef<THREE.LineSegments | null>(null);
-  const spriteRef = useRef<THREE.Sprite | null>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const detectionsRef = useRef<Detection[]>(detections);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const polyRef = useRef<SVGPolylineElement | null>(null);
+  const labelRef = useRef<HTMLDivElement | null>(null);
+
+  // current selection lives in a ref so the rAF loop can read the latest
+  // value without re-creating the loop on every state change.
   const selRef = useRef<{ active: string | null; hover: string | null }>({
     active: null,
     hover: null,
   });
-
-  detectionsRef.current = detections;
   selRef.current = { active: activeId, hover: hoverId };
 
-  // Mount the wireframe + sprite the moment a THREE.Scene is reachable
-  // through the viewer. Polls because mkkellogg's Viewer constructs the
-  // scene before addSplatScene returns.
+  const detRef = useRef<Detection[]>(detections);
+  detRef.current = detections;
+
+  const [diag, setDiag] = useState<string>("waiting for viewer…");
+
   useEffect(() => {
     if (!viewer) return;
     let cancelled = false;
-    let pollHandle: number | null = null;
-    let frameHandle: number | null = null;
+    let frame: number | null = null;
+    const tmp = new THREE.Vector3();
 
-    function findScene(): THREE.Scene | null {
+    function getCamera(): THREE.PerspectiveCamera | null {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const v = viewer as any;
-      const candidates = [
-        v?.threeScene,
-        v?.scene,
-        v?.splatMesh?.scene,
-        v?.splatMesh?.parent,
-        v?.renderer?.scene,
+      const c = v?.camera || v?.threeCamera;
+      return c && c.isCamera ? (c as THREE.PerspectiveCamera) : null;
+    }
+
+    function getCanvas(): HTMLCanvasElement | null {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const v = viewer as any;
+      const r = v?.renderer || v?.threeRenderer;
+      return r?.domElement ?? null;
+    }
+
+    function corners(min: number[], max: number[]): THREE.Vector3[] {
+      const [x0, y0, z0] = min;
+      const [x1, y1, z1] = max;
+      return [
+        new THREE.Vector3(x0, y0, z0),
+        new THREE.Vector3(x1, y0, z0),
+        new THREE.Vector3(x1, y1, z0),
+        new THREE.Vector3(x0, y1, z0),
+        new THREE.Vector3(x0, y0, z1),
+        new THREE.Vector3(x1, y0, z1),
+        new THREE.Vector3(x1, y1, z1),
+        new THREE.Vector3(x0, y1, z1),
       ];
-      for (const c of candidates) {
-        if (c && typeof c === "object" && (c as THREE.Object3D).isObject3D) {
-          return c as THREE.Scene;
-        }
-      }
-      return null;
     }
 
-    function attach(scene: THREE.Scene) {
-      sceneRef.current = scene;
-
-      const geo = new THREE.BoxGeometry(1, 1, 1);
-      const edges = new THREE.EdgesGeometry(geo);
-      const mat = new THREE.LineBasicMaterial({
-        color: 0xf5b97a,
-        transparent: true,
-        opacity: 1.0,
-        depthTest: false,
-        depthWrite: false,
-      });
-      const box = new THREE.LineSegments(edges, mat);
-      box.renderOrder = 9999;
-      box.visible = false;
-      scene.add(box);
-      boxRef.current = box;
-
-      const sprite = makeLabelSprite("");
-      sprite.visible = false;
-      sprite.renderOrder = 10000;
-      scene.add(sprite);
-      spriteRef.current = sprite;
-
-      // eslint-disable-next-line no-console
-      console.log("[ObjectOverlay] attached to scene", {
-        keys: Object.keys(viewer).slice(0, 30),
-        children: scene.children.length,
-      });
-
-      // drive a per-frame update loop so hover/click changes always reflect
-      const tick = () => {
-        if (cancelled) return;
-        applySelection();
-        frameHandle = requestAnimationFrame(tick);
-      };
-      frameHandle = requestAnimationFrame(tick);
+    function project(point: THREE.Vector3, cam: THREE.PerspectiveCamera, w: number, h: number) {
+      tmp.copy(point).project(cam);
+      // tmp.z < -1 or > 1 means the point is outside the depth range
+      const x = (tmp.x * 0.5 + 0.5) * w;
+      const y = (-tmp.y * 0.5 + 0.5) * h;
+      return { x, y, z: tmp.z };
     }
 
-    function applySelection() {
-      const box = boxRef.current;
-      const sprite = spriteRef.current;
-      if (!box || !sprite) return;
-      const id = selRef.current.hover ?? selRef.current.active;
-      const d = id ? detectionsRef.current.find((x) => x.id === id) : undefined;
-      if (!d || !d.bbox_min || !d.bbox_max) {
-        if (box.visible) box.visible = false;
-        if (sprite.visible) sprite.visible = false;
-        return;
-      }
-      const [ax, ay, az] = d.bbox_min;
-      const [bx, by, bz] = d.bbox_max;
-      const cx = (ax + bx) / 2;
-      const cy = (ay + by) / 2;
-      const cz = (az + bz) / 2;
-      box.visible = true;
-      box.position.set(cx, cy, cz);
-      box.scale.set(
-        Math.max(0.01, bx - ax),
-        Math.max(0.01, by - ay),
-        Math.max(0.01, bz - az)
-      );
-
-      const label = `${d.class_name} · ${(d.confidence * 100).toFixed(0)}%`;
-      const mat = sprite.material as THREE.SpriteMaterial;
-      // Only re-render the label when text changed (cheap key on sprite.userData)
-      if (sprite.userData.text !== label) {
-        mat.map?.dispose();
-        mat.map = makeLabelTexture(label);
-        mat.needsUpdate = true;
-        sprite.userData.text = label;
-      }
-      sprite.visible = true;
-      sprite.position.set(cx, cy, bz + 0.18);
-      const w = Math.max(0.7, Math.min(2.2, (bx - ax) * 1.3));
-      sprite.scale.set(w, w * 0.28, 1);
-    }
-
-    // Try immediately, then poll every 200ms for up to 10s.
-    let attempts = 0;
-    function tryAttach() {
+    function tick() {
       if (cancelled) return;
-      const scene = findScene();
-      if (scene) {
-        attach(scene);
-        return;
-      }
-      attempts += 1;
-      if (attempts > 50) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          "[ObjectOverlay] gave up: no THREE.Scene exposed by viewer after 10s",
-          { keys: Object.keys(viewer || {}).slice(0, 40) }
-        );
-        return;
-      }
-      pollHandle = window.setTimeout(tryAttach, 200);
-    }
-    tryAttach();
+      frame = requestAnimationFrame(tick);
 
+      const poly = polyRef.current;
+      const label = labelRef.current;
+      if (!poly || !label) return;
+
+      const id = selRef.current.hover ?? selRef.current.active;
+      const d = id ? detRef.current.find((x) => x.id === id) : undefined;
+      if (!d || !d.bbox_min || !d.bbox_max) {
+        poly.setAttribute("points", "");
+        label.style.display = "none";
+        return;
+      }
+      const cam = getCamera();
+      const canvas = getCanvas();
+      if (!cam || !canvas) {
+        if (diag.startsWith("waiting")) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const v = viewer as any;
+          setDiag(`viewer present, camera=${!!cam}, canvas=${!!canvas}, keys=${Object.keys(v).slice(0, 14).join(",")}`);
+        }
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const offX = containerRect ? rect.left - containerRect.left : 0;
+      const offY = containerRect ? rect.top - containerRect.top : 0;
+      const w = rect.width;
+      const h = rect.height;
+
+      const pts = corners(d.bbox_min, d.bbox_max).map((p) => project(p, cam, w, h));
+      // bail if any corner is behind the camera AND others are too — full clip
+      const allBehind = pts.every((p) => p.z > 1);
+      if (allBehind) {
+        poly.setAttribute("points", "");
+        label.style.display = "none";
+        return;
+      }
+
+      // 12 edges of the box drawn as a single polyline (with revisits)
+      // edges:
+      //   bottom: 0-1, 1-2, 2-3, 3-0
+      //   top:    4-5, 5-6, 6-7, 7-4
+      //   verts:  0-4, 1-5, 2-6, 3-7
+      const seq = [0, 1, 2, 3, 0, 4, 5, 1, 5, 6, 2, 6, 7, 3, 7, 4];
+      const pointsStr = seq
+        .map((i) => `${(pts[i].x + offX).toFixed(1)},${(pts[i].y + offY).toFixed(1)}`)
+        .join(" ");
+      poly.setAttribute("points", pointsStr);
+
+      // label = top-front-center of the bbox
+      const top = pts.slice(4).reduce(
+        (acc, p) => ({ x: acc.x + p.x / 4, y: acc.y + p.y / 4, z: acc.z + p.z / 4 }),
+        { x: 0, y: 0, z: 0 }
+      );
+      label.style.display = "block";
+      label.style.left = `${top.x + offX}px`;
+      label.style.top = `${top.y + offY - 30}px`;
+      label.textContent = `${d.class_name} · ${(d.confidence * 100).toFixed(0)}%`;
+    }
+
+    frame = requestAnimationFrame(tick);
+    setDiag("overlay running");
     return () => {
       cancelled = true;
-      if (pollHandle) clearTimeout(pollHandle);
-      if (frameHandle) cancelAnimationFrame(frameHandle);
-      const scene = sceneRef.current;
-      const box = boxRef.current;
-      const sprite = spriteRef.current;
-      if (box && scene) {
-        scene.remove(box);
-        box.geometry.dispose();
-        (box.material as THREE.Material).dispose();
-      }
-      if (sprite && scene) {
-        scene.remove(sprite);
-        (sprite.material as THREE.SpriteMaterial).map?.dispose();
-        (sprite.material as THREE.SpriteMaterial).dispose();
-      }
-      boxRef.current = null;
-      spriteRef.current = null;
-      sceneRef.current = null;
+      if (frame) cancelAnimationFrame(frame);
     };
-  }, [viewer]);
+  }, [viewer, diag]);
 
-  return null;
-}
-
-function makeLabelTexture(text: string): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 128;
-  const ctx = c.getContext("2d")!;
-  ctx.clearRect(0, 0, c.width, c.height);
-  ctx.font = "600 56px Inter, ui-sans-serif, system-ui, sans-serif";
-  const metrics = ctx.measureText(text);
-  const padX = 18;
-  const tw = Math.min(c.width - padX * 2, metrics.width);
-  const x0 = (c.width - tw) / 2 - padX;
-  const x1 = x0 + tw + padX * 2;
-  const y0 = (c.height - 64) / 2;
-  const y1 = y0 + 64;
-  const r = 16;
-  ctx.fillStyle = "rgba(15, 15, 15, 0.94)";
-  ctx.beginPath();
-  ctx.moveTo(x0 + r, y0);
-  ctx.lineTo(x1 - r, y0);
-  ctx.quadraticCurveTo(x1, y0, x1, y0 + r);
-  ctx.lineTo(x1, y1 - r);
-  ctx.quadraticCurveTo(x1, y1, x1 - r, y1);
-  ctx.lineTo(x0 + r, y1);
-  ctx.quadraticCurveTo(x0, y1, x0, y1 - r);
-  ctx.lineTo(x0, y0 + r);
-  ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "rgba(245, 185, 122, 0.85)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = "#f5b97a";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, c.width / 2, c.height / 2);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = false;
-  return tex;
-}
-
-function makeLabelSprite(text: string): THREE.Sprite {
-  const tex = makeLabelTexture(text);
-  const mat = new THREE.SpriteMaterial({
-    map: tex,
-    depthTest: false,
-    depthWrite: false,
-    transparent: true,
-  });
-  const s = new THREE.Sprite(mat);
-  s.userData.text = text;
-  return s;
+  return (
+    <div
+      ref={containerRef}
+      className="pointer-events-none absolute inset-0 z-10"
+      style={{ overflow: "hidden" }}
+    >
+      <svg
+        className="absolute inset-0 w-full h-full"
+        style={{ pointerEvents: "none" }}
+      >
+        <polyline
+          ref={polyRef}
+          fill="none"
+          stroke="#f5b97a"
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          style={{ filter: "drop-shadow(0 0 4px rgba(245,185,122,0.6))" }}
+        />
+      </svg>
+      <div
+        ref={labelRef}
+        className="absolute"
+        style={{
+          display: "none",
+          transform: "translate(-50%, -100%)",
+          background: "rgba(15,15,15,0.92)",
+          color: "#f5b97a",
+          border: "1px solid rgba(245,185,122,0.7)",
+          borderRadius: 6,
+          padding: "4px 10px",
+          fontSize: 12,
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+        }}
+      />
+      {/* tiny debug chip in bottom-left, only visible until we attach */}
+      {diag !== "overlay running" && (
+        <div
+          className="absolute bottom-2 left-2 text-[10px] text-amber-300/80"
+          style={{ pointerEvents: "none" }}
+        >
+          overlay: {diag}
+        </div>
+      )}
+    </div>
+  );
 }
