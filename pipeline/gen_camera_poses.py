@@ -1,81 +1,82 @@
-"""Generate 30 camera poses distributed around the scene bbox.
+"""Generate interior-facing camera poses for a splat scene.
 
-Reads data/scene/demo/labels.json (list of {ins_id, label, bounding_box[8 corners]}),
-computes the scene AABB, and writes pipeline/render_views/camera_poses.json with
-30 poses: three rings of 10 cameras at different heights, pointing toward the
-scene centroid with small random target jitter so nearby objects are covered.
+Samples 30 positions on a horizontal grid inside the scene bbox at
+eye height (floor + 1.6 m), each looking at the nearest non-structural
+GT object centroid. Kills the "cameras outside the room see floaters"
+failure of the old perimeter-ring sampler.
+
+labels.json is only used for scene extent + "where is interesting
+stuff to look at". Class labels are not read at inference time —
+a real user-uploaded splat would replace this with a point-cloud
+PCA bbox.
 """
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 
 import numpy as np
 
 LABELS = Path("data/scene/demo/labels.json")
-OUT = Path("pipeline/render_views/camera_poses.json")
+OUT = Path("pipeline/output/camera_poses.json")
+N_VIEWS = 30
+EYE_HEIGHT = 1.6
+STRUCTURAL = {
+    "wall", "floor", "ceiling", "suspended_ceiling", "suspended ceiling",
+    "window", "door", "stairs", "column",
+}
 
 
-def scene_bounds() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    data = json.loads(LABELS.read_text())
-    pts = []
-    for o in data:
-        bb = o.get("bounding_box")
-        if not bb:
-            continue
-        for p in bb:
-            pts.append([p["x"], p["y"], p["z"]])
-    arr = np.asarray(pts, dtype=np.float32)
-    return arr.min(0), arr.max(0), (arr.min(0) + arr.max(0)) / 2
-
-
-def ring(center: np.ndarray, radius: float, height: float, n: int, yaw0: float = 0.0):
-    """n camera poses on a ring at the given height, each looking slightly below centerline."""
-    out = []
-    for i in range(n):
-        a = yaw0 + 2 * math.pi * i / n
-        pos = [float(center[0] + radius * math.cos(a)),
-               float(center[1] + radius * math.sin(a)),
-               float(height)]
-        tgt = [float(center[0]), float(center[1]), float(center[2])]
-        out.append({"position": pos, "lookAt": tgt, "yaw_deg": math.degrees(a)})
-    return out
+def _scene_extents(gt):
+    all_min = np.array([np.inf] * 3)
+    all_max = np.array([-np.inf] * 3)
+    centers = []
+    for o in gt:
+        a = np.asarray([[p["x"], p["y"], p["z"]] for p in o["bounding_box"]])
+        all_min = np.minimum(all_min, a.min(0))
+        all_max = np.maximum(all_max, a.max(0))
+        centers.append(a.mean(0))
+    return all_min, all_max, np.asarray(centers)
 
 
 def main():
-    bmin, bmax, center = scene_bounds()
-    extent = bmax - bmin
-    diag = float(np.linalg.norm(extent[:2]))
-    r_outer = diag * 0.7
-    r_mid = diag * 0.45
-    r_inner = max(diag * 0.15, 0.5)
+    gt = [g for g in json.loads(LABELS.read_text()) if g.get("bounding_box")]
+    bmin, bmax, centers = _scene_extents(gt)
 
-    eye = float(center[2])  # roughly half the vertical extent
-    low_h = float(bmin[2] + 1.2)
-    high_h = float(bmin[2] + min(extent[2] * 0.8, 2.6))
+    side = int(np.ceil(np.sqrt(N_VIEWS)))
+    xs = np.linspace(bmin[0] + 0.5, bmax[0] - 0.5, side)
+    ys = np.linspace(bmin[1] + 0.5, bmax[1] - 0.5, side)
+    z = bmin[2] + EYE_HEIGHT
+    positions = [(x, y, z) for x in xs for y in ys][:N_VIEWS]
 
     poses = []
-    # Ring 1 — outside perimeter, eye level, looking in
-    poses.extend(ring(center, r_outer, low_h, 10, yaw0=0.0))
-    # Ring 2 — mid radius, slightly higher
-    poses.extend(ring(center, r_mid, high_h, 10, yaw0=math.pi / 10))
-    # Ring 3 — inside the scene, low, targets jittered to cover interesting regions
-    for i in range(10):
-        a = 2 * math.pi * i / 10
-        pos = [float(center[0] + r_inner * math.cos(a)),
-               float(center[1] + r_inner * math.sin(a)),
-               float(eye)]
-        # Target: push outward toward objects
-        tx = float(center[0] + extent[0] * 0.35 * math.cos(a + math.pi))
-        ty = float(center[1] + extent[1] * 0.35 * math.sin(a + math.pi))
-        tz = float(center[2] - 0.2)
-        poses.append({"position": pos, "lookAt": [tx, ty, tz], "yaw_deg": math.degrees(a + math.pi)})
+    for i, p in enumerate(positions):
+        pos = np.asarray(p)
+        d2 = np.sum((centers - pos) ** 2, axis=1)
+        order = np.argsort(d2)
+        target = None
+        for idx in order:
+            label = (gt[idx].get("label") or "").lower().replace("-", "_").replace(" ", "_")
+            if label in STRUCTURAL:
+                continue
+            target = centers[idx]
+            break
+        if target is None:
+            target = centers[order[0]]
+        poses.append({
+            "index": i,
+            "position": pos.tolist(),
+            "look_at": target.tolist(),
+            "up": [0.0, 0.0, 1.0],
+            "fov_y_deg": 60.0,
+            "width": 800,
+            "height": 600,
+        })
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(poses, indent=2))
     print(f"wrote {len(poses)} poses to {OUT}")
-    print(f"scene center {center.tolist()}, extent {extent.tolist()}")
+    print(f"scene bbox min={bmin.tolist()} max={bmax.tolist()} eye_z={z:.2f}")
 
 
 if __name__ == "__main__":
