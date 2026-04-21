@@ -23,6 +23,16 @@ each clickable in the browser viewer with a wireframe bounding box and a
 class label. The same pipeline is built to accept any of the four input
 types above with a per-type sandbox UI (see [Roadmap](#roadmap)).
 
+
+https://github.com/user-attachments/assets/c9b13bac-4bc8-4e94-a25f-4e9b24b91516
+
+
+
+
+
+
+
+
 ---
 
 ## Architecture
