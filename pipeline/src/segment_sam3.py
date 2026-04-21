@@ -52,10 +52,15 @@ def _try_sam3():
     except Exception as exc:  # noqa: BLE001
         print(f"[segment] SAM 3 import failed ({exc.__class__.__name__}: {exc})")
         return None, None
-    bpe_path = os.path.join(
-        os.path.dirname(sam3.__file__), "..", "assets",
-        "bpe_simple_vocab_16e6.txt.gz",
-    )
+    pkg_dir = os.path.dirname(sam3.__file__)
+    bpe_candidates = [
+        os.path.join(pkg_dir, "assets", "bpe_simple_vocab_16e6.txt.gz"),
+        os.path.join(pkg_dir, "..", "assets", "bpe_simple_vocab_16e6.txt.gz"),
+    ]
+    bpe_path = next((p for p in bpe_candidates if os.path.exists(p)), None)
+    if bpe_path is None:
+        print(f"[segment] BPE vocab not found in {bpe_candidates}")
+        return None, None
     print("[segment] loading SAM 3 image model (first run downloads ~1.5 GB) ...")
     t0 = time.time()
     model = build_sam3_image_model(bpe_path=bpe_path)
@@ -65,6 +70,14 @@ def _try_sam3():
 
 
 def _segment_with_sam3(processor, vocab: list[str]):
+    # SAM 3 example notebook enters autocast globally before any model
+    # call — set_image / set_text_prompt both rely on bf16 to match the
+    # model weights' linear layers.
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    autocast_ctx = torch.autocast("cuda", dtype=torch.bfloat16)
+    autocast_ctx.__enter__()
+
     views = sorted(VIEWS.glob("view_*.png"))
     print(f"[segment] {len(views)} views × {len(vocab)} classes = {len(views) * len(vocab)} prompts")
 
@@ -75,7 +88,7 @@ def _segment_with_sam3(processor, vocab: list[str]):
 
         out: list[dict] = []
         mask_id = 0
-        with torch.autocast("cuda", dtype=torch.bfloat16):
+        if True:
             for cls in vocab:
                 processor.reset_all_prompts(state)
                 state = processor.set_text_prompt(prompt=cls, state=state)
@@ -84,9 +97,10 @@ def _segment_with_sam3(processor, vocab: list[str]):
                 scores = state.get("scores")
                 if masks is None or len(masks) == 0:
                     continue
-                masks_np = masks.squeeze(1).cpu().numpy().astype(bool)
-                boxes_np = boxes.cpu().numpy()
-                scores_np = scores.cpu().numpy()
+                # numpy can't represent bfloat16 — cast to fp32 first
+                masks_np = masks.squeeze(1).float().cpu().numpy().astype(bool)
+                boxes_np = boxes.float().cpu().numpy()
+                scores_np = scores.float().cpu().numpy()
                 for k in range(masks_np.shape[0]):
                     seg = masks_np[k]
                     if seg.sum() < 400:

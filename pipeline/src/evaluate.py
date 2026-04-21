@@ -45,8 +45,9 @@ def bbox_iou(a_min, a_max, b_min, b_max) -> float:
 _CANONICAL: dict[str, str] = {}
 for group in [
     ("wine", "wine_bottle", "bottle"),
-    ("downlights", "downlight"),
-    ("spotlight", "spot_light"),
+    ("downlights", "downlight", "spotlight", "spot_light"),
+    ("pillow", "cushion", "throw_pillow"),
+    ("wine_glass", "glass"),
     ("decorative_painting", "painting"),
     ("high_chair", "stool", "armchair"),
     ("dining_plate", "plate"),
