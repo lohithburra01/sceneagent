@@ -1,0 +1,11 @@
+schema_version = "1.0.0"
+
+id = "camera_array_tool"
+version = "3.2.0"
+name = "Camera Array Tool"
+tagline = "Create Camera Arrays and render from multiple cameras."
+maintainer = "Olli Huttunen - ToppiNappi 2025"
+type = "add-on"
+
+blender_version_min = "3.0.6"
+license = ["SPDX:GPL-2.0-or-later"]
